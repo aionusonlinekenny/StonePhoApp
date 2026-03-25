@@ -29,30 +29,6 @@ fun <T> MutableList<T>.swap(i: Int, j: Int) {
     this[j] = tmp
 }
 
-@Composable
-fun DropdownMenuBox(
-    selectedText: String,
-    options: List<Pair<String, String>>,
-    onColorSelected: (String) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        OutlinedButton(onClick = { expanded = true }) {
-            Text(selectedText)
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            options.forEach { (color, label) ->
-                DropdownMenuItem(
-                    text = { Text(label) },
-                    onClick = {
-                        onColorSelected(color)
-                        expanded = false
-                    }
-                )
-            }
-        }
-    }
-}
 
 @RequiresApi(Build.VERSION_CODES.N)
 @Composable

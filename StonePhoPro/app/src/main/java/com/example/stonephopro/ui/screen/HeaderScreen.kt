@@ -13,8 +13,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.stonephopro.viewmodel.OrderViewModel
-import java.text.SimpleDateFormat
-import java.util.*
 import com.example.stonephopro.utils.PriceInputPad
 import androidx.compose.runtime.mutableIntStateOf
 import com.example.stonephopro.components.Button3D
@@ -33,10 +31,7 @@ fun HeaderScreen(
     var showMenu by remember { mutableStateOf(false) }
     var showQuickPayDialog by remember { mutableStateOf(false) }
     var quickPayName by remember { mutableStateOf(TextFieldValue()) }
-    val priceCents = remember { mutableIntStateOf(0) } // ✅ Thêm tại đây
-    val now = remember { Date() }
-    val dateStr = remember { SimpleDateFormat("MM/dd/yyyy", Locale.US).format(now) }
-    val timeStr = remember { SimpleDateFormat("HH:mm", Locale.US).format(now) }
+    val priceCents = remember { mutableIntStateOf(0) }
 
     Row(
         modifier = Modifier

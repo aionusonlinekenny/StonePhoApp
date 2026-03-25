@@ -51,23 +51,3 @@ fun Button3D(
         )
     }
 }
-
-@Composable
-fun FilterButton3D(
-    text: String,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    val colorSelected = listOf(Color(0xFF4FC3F7), Color(0xFF0288D1))  // Xanh khi chọn
-    val colorUnselected = listOf(Color(0xFFE0E0E0), Color(0xFFBDBDBD)) // Xám khi chưa chọn
-
-    Button3D(
-        text = text,
-        onClick = onClick,
-        modifier = Modifier
-            .height(40.dp)
-            .widthIn(min = 50.dp),
-        fontSize = 13.sp,
-        gradientColors = if (selected) colorSelected else colorUnselected
-    )
-}

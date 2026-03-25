@@ -68,7 +68,6 @@ object InvoiceStorage {
 
         val type = object : TypeToken<List<Invoice>>() {}.type
         val content = file.readText()
-        //Log.d("InvoiceStorage", "Đọc file: ${file.absolutePath}, nội dung: $content")
         return gson.fromJson(content, type)
     }
 
