@@ -40,7 +40,6 @@ enum class ViewMode {
 @Composable
 fun InvoiceHistoryScreen(onBack: () -> Unit, permission: String) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val formatter = remember { SimpleDateFormat("MM-dd-yyyy", Locale.US) }
     val today = formatter.format(Calendar.getInstance().time)
     var lastPrintStatus by remember { mutableStateOf("") }
