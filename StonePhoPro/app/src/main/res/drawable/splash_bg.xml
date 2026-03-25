@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Nền đen (phòng khi hình ảnh chưa tải kịp) -->
+    <item android:drawable="@android:color/black" />
+
+    <!-- Hình nền intro ở giữa -->
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@drawable/intro_bg" />
+    </item>
+</layer-list>
