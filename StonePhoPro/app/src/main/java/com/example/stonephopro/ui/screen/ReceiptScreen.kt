@@ -29,6 +29,9 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
+private const val PREFS_NAME = "app_settings"
+private const val KEY_TAX_ENABLED = "tax_enabled"
+
 @RequiresApi(Build.VERSION_CODES.N)
 @Composable
 fun ReceiptScreen(viewModel: OrderViewModel) {
@@ -36,8 +39,10 @@ fun ReceiptScreen(viewModel: OrderViewModel) {
     val context = LocalContext.current
     var showDialog by remember { mutableStateOf(false) }
     var lastInvoiceId by remember { mutableStateOf("") }
-    var discountPercent by remember { mutableStateOf(0.0) } // ✅ Discount %
-    var showDiscountDialog by remember { mutableStateOf(false) } // ✅ Popup Discount
+    var discountPercent by remember { mutableStateOf(0.0) }
+    var showDiscountDialog by remember { mutableStateOf(false) }
+    val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+    var taxEnabled by remember { mutableStateOf(prefs.getBoolean(KEY_TAX_ENABLED, true)) }
     val cartItems by remember(viewModel.cart) {
         derivedStateOf {
             viewModel.cart.groupBy { it }.mapValues { it.value.size }
@@ -110,18 +115,27 @@ fun ReceiptScreen(viewModel: OrderViewModel) {
             }
         }
 
-        // Discount Button và Popup
+        // Discount + Tax Toggle
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(" Discount (%):", fontSize = 14.sp)
+            Text("Discount:", fontSize = 14.sp)
             Button(
                 onClick = { showDiscountDialog = true },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4FC3F7))
             ) {
                 Text("${discountPercent.toInt()}%")
             }
+            Spacer(modifier = Modifier.weight(1f))
+            Text("TAX 8%:", fontSize = 14.sp)
+            Switch(
+                checked = taxEnabled,
+                onCheckedChange = {
+                    taxEnabled = it
+                    prefs.edit().putBoolean(KEY_TAX_ENABLED, it).apply()
+                }
+            )
         }
 
         if (showDiscountDialog) {
@@ -148,12 +162,14 @@ fun ReceiptScreen(viewModel: OrderViewModel) {
         val subtotal = cartItems.entries.sumOf { it.key.price * it.value }
         val dis = subtotal * discountPercent / 100
         val taxedSubtotal = subtotal - dis
-        val tax = taxedSubtotal * 0.08
+        val tax = if (taxEnabled) taxedSubtotal * 0.08 else 0.0
         val total = taxedSubtotal + tax
 
         Text(" Subtotal: %.2f$".format(subtotal), fontSize = 12.sp)
         Text(" Discount (${discountPercent.toInt()}%%): -%.2f$".format(dis), fontSize = 12.sp)
-        Text(" TAX 8%%: %.2f$".format(tax), fontSize = 12.sp)
+        if (taxEnabled) {
+            Text(" TAX 8%%: %.2f$".format(tax), fontSize = 12.sp)
+        }
         Text(" Total: %.2f$".format(total), fontSize = 14.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -176,7 +192,8 @@ fun ReceiptScreen(viewModel: OrderViewModel) {
                     subtotal = subtotal,
                     discount = dis,
                     tax = tax,
-                    total = total
+                    total = total,
+                    taxEnabled = taxEnabled
                 )
 
                 scope.launch {
@@ -210,7 +227,6 @@ fun ReceiptScreen(viewModel: OrderViewModel) {
     }
 }
 
-// ✅ Hàm in hóa đơn hoàn chỉnh
 fun buildPrintableReceipt(
     invoiceId: String,
     cartItems: Map<Product, Int>,
@@ -219,7 +235,8 @@ fun buildPrintableReceipt(
     subtotal: Double,
     discount: Double,
     tax: Double,
-    total: Double
+    total: Double,
+    taxEnabled: Boolean = true
 ): String {
     val sb = StringBuilder()
     sb.appendLine("                  STONE PHO POS")
@@ -237,7 +254,9 @@ fun buildPrintableReceipt(
     sb.appendLine("------------------------------------------------")
     sb.appendLine("Subtotal:                        %.2f$".format(subtotal))
     sb.appendLine("Discount:                      -%.2f$".format(discount))
-    sb.appendLine("Tax (8%%):                       %.2f$".format(tax))
+    if (taxEnabled) {
+        sb.appendLine("Tax (8%%):                       %.2f$".format(tax))
+    }
     sb.appendLine("TOTAL:                           %.2f$".format(total))
     sb.appendLine("------------------------------------------------")
     sb.appendLine("                  Thank you! \n\n\n")
