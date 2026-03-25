@@ -40,6 +40,7 @@ enum class ViewMode {
 @Composable
 fun InvoiceHistoryScreen(onBack: () -> Unit, permission: String) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val formatter = remember { SimpleDateFormat("MM-dd-yyyy", Locale.US) }
     val today = formatter.format(Calendar.getInstance().time)
     var lastPrintStatus by remember { mutableStateOf("") }
@@ -247,7 +248,9 @@ fun InvoiceHistoryScreen(onBack: () -> Unit, permission: String) {
                         onClick = {
                             val summary = buildInvoiceSummaryText(viewMode, invoices)
                             PrinterConfig.getSelectedIpPort()?.let { (ip, port) ->
-                                SocketPrinter.printText(ip, port, summary)
+                                scope.launch {
+                                    SocketPrinter.printText(ip, port, summary)
+                                }
                             }
                         },
                         modifier = Modifier
