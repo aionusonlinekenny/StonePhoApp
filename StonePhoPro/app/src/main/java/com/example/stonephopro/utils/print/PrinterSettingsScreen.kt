@@ -1,14 +1,20 @@
 // PrinterSettingsScreen.kt
 package com.example.stonephopro.utils.print
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import androidx.annotation.RequiresApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -22,6 +28,14 @@ import java.net.NetworkInterface
 import java.net.Socket
 import com.example.stonephopro.utils.SocketPrinter
 import com.example.stonephopro.utils.PrinterConfig
+
+private fun isWifiConnected(context: Context): Boolean {
+    val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val network = cm.activeNetwork ?: return false
+    val caps = cm.getNetworkCapabilities(network) ?: return false
+    return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+}
+
 @RequiresApi(Build.VERSION_CODES.N)
 @Composable
 fun PrinterSettingsScreen(onBack: () -> Unit) {
@@ -31,34 +45,59 @@ fun PrinterSettingsScreen(onBack: () -> Unit) {
     var progress by remember { mutableStateOf(0f) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var scanJob: Job? by remember { mutableStateOf(null) } // ✅ Job để quản lý coroutine
+    var scanJob: Job? by remember { mutableStateOf(null) }
+
+    val wifiConnected by remember { derivedStateOf { isWifiConnected(context) } }
 
     Column(modifier = Modifier.padding(16.dp)) {
         Text("⚙️ Cài đặt máy in", style = MaterialTheme.typography.titleLarge)
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        // ✅ Button3D với hiệu ứng gradient
+        // Cảnh báo WiFi chưa kết nối
+        if (!wifiConnected) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFFFE082), shape = RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "⚠️ Chưa kết nối WiFi! Vui lòng kết nối WiFi cùng mạng với máy in trước khi tìm kiếm.",
+                    fontSize = 13.sp,
+                    color = Color(0xFF5D4037)
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+
+        // Button3D với hiệu ứng gradient
         Button3D(
             text = if (isSearching) "🔍 Đang tìm..." else "🔍 Tìm máy in trong mạng",
             onClick = {
                 if (isSearching) return@Button3D
 
+                if (!isWifiConnected(context)) {
+                    status = "⚠️ Chưa kết nối WiFi! Hãy bật WiFi và kết nối vào cùng mạng với máy in."
+                    return@Button3D
+                }
+
                 isSearching = true
                 status = "🔄 Đang quét IP..."
                 progress = 0f
-                printers.clear() // Đặt lại danh sách máy in
+                printers.clear()
 
                 scanJob = scope.launch(Dispatchers.IO) {
                     scanLANForPrinters(
                         onPrinterFound = { printer ->
-                            printers.add(printer) // ✅ Thêm vào danh sách ngay khi tìm thấy
+                            printers.add(printer)
                         },
                         onProgressUpdate = { progressValue, currentIP ->
                             progress = progressValue
                             status = "🔄 Đang quét: $currentIP (${printers.size} máy in)"
                         },
                         delayTime = 10L,
-                        timeout = 100
+                        timeout = 500
                     )
                     withContext(Dispatchers.Main) {
                         isSearching = false
