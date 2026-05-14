@@ -135,21 +135,24 @@ suspend fun scanLANForPrinters(
     onPrinterFound: (String) -> Unit,
     onProgressUpdate: (Float, String) -> Unit,
     delayTime: Long = 10L,
-    timeout: Int = 100
+    timeout: Int = 500
 ) {
     val baseIp = getLocalSubnet()
-    val portsToScan = listOf(9100)
     val totalScans = 254
     var completedScans = 0
 
     for (i in 1..254) {
         val ip = "$baseIp.$i"
-        onProgressUpdate(completedScans / totalScans.toFloat(), ip)
+        withContext(Dispatchers.Main) {
+            onProgressUpdate(completedScans / totalScans.toFloat(), ip)
+        }
         try {
             Socket().use { socket ->
                 socket.connect(InetSocketAddress(ip, 9100), timeout)
                 val printer = "TCP:$ip:9100"
-                onPrinterFound(printer)
+                withContext(Dispatchers.Main) {
+                    onPrinterFound(printer)
+                }
             }
         } catch (_: Exception) {}
 
@@ -158,19 +161,34 @@ suspend fun scanLANForPrinters(
     }
 }
 
-// ✅ Hàm lấy subnet
+// ✅ Hàm lấy subnet — ưu tiên interface WiFi (wlan) để tránh lấy nhầm mạng di động
 private fun getLocalSubnet(): String {
-    val interfaces = NetworkInterface.getNetworkInterfaces()
-    for (iface in interfaces) {
-        val addresses = iface.inetAddresses
-        for (addr in addresses) {
-            if (!addr.isLoopbackAddress && addr is Inet4Address) {
-                val hostAddress = addr.hostAddress
-                if (hostAddress != null) {
-                    return hostAddress.substringBeforeLast(".")
+    try {
+        val interfaces = NetworkInterface.getNetworkInterfaces() ?: return "192.168.0"
+        val allIfaces = interfaces.toList()
+
+        // Ưu tiên interface tên chứa "wlan" (WiFi trên Android)
+        for (iface in allIfaces) {
+            if (!iface.isUp || iface.isLoopback || iface.isPointToPoint) continue
+            if (!iface.name.contains("wlan", ignoreCase = true)) continue
+            for (addr in iface.inetAddresses) {
+                if (!addr.isLoopbackAddress && addr is Inet4Address) {
+                    val host = addr.hostAddress ?: continue
+                    return host.substringBeforeLast(".")
                 }
             }
         }
-    }
+
+        // Fallback: bất kỳ interface IPv4 nào không phải loopback / point-to-point
+        for (iface in allIfaces) {
+            if (!iface.isUp || iface.isLoopback || iface.isPointToPoint) continue
+            for (addr in iface.inetAddresses) {
+                if (!addr.isLoopbackAddress && addr is Inet4Address) {
+                    val host = addr.hostAddress ?: continue
+                    return host.substringBeforeLast(".")
+                }
+            }
+        }
+    } catch (_: Exception) {}
     return "192.168.0" // fallback
 }
