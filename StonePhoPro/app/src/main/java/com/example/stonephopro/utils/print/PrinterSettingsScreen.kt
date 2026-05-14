@@ -22,7 +22,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.stonephopro.components.Button3D
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Semaphore
 import java.net.Inet4Address
+import java.util.concurrent.atomic.AtomicInteger
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.Socket
@@ -96,7 +98,6 @@ fun PrinterSettingsScreen(onBack: () -> Unit) {
                             progress = progressValue
                             status = "🔄 Đang quét: $currentIP (${printers.size} máy in)"
                         },
-                        delayTime = 10L,
                         timeout = 500
                     )
                     withContext(Dispatchers.Main) {
@@ -169,34 +170,41 @@ fun PrinterSettingsScreen(onBack: () -> Unit) {
     }
 }
 
-// ✅ Hàm scanLANForPrinters với danh sách cập nhật nhanh
+// Quét song song nhiều IP cùng lúc, giới hạn đồng thời bằng Semaphore
 suspend fun scanLANForPrinters(
     onPrinterFound: (String) -> Unit,
     onProgressUpdate: (Float, String) -> Unit,
-    delayTime: Long = 10L,
-    timeout: Int = 500
+    timeout: Int = 500,
+    concurrency: Int = 50
 ) {
     val baseIp = getLocalSubnet()
     val totalScans = 254
-    var completedScans = 0
+    val completedScans = AtomicInteger(0)
+    val semaphore = Semaphore(concurrency)
 
-    for (i in 1..254) {
-        val ip = "$baseIp.$i"
-        withContext(Dispatchers.Main) {
-            onProgressUpdate(completedScans / totalScans.toFloat(), ip)
-        }
-        try {
-            Socket().use { socket ->
-                socket.connect(InetSocketAddress(ip, 9100), timeout)
-                val printer = "TCP:$ip:9100"
-                withContext(Dispatchers.Main) {
-                    onPrinterFound(printer)
+    coroutineScope {
+        for (i in 1..254) {
+            val ip = "$baseIp.$i"
+            launch(Dispatchers.IO) {
+                semaphore.acquire()
+                try {
+                    withContext(Dispatchers.Main) {
+                        onProgressUpdate(completedScans.get() / totalScans.toFloat(), ip)
+                    }
+                    try {
+                        Socket().use { socket ->
+                            socket.connect(InetSocketAddress(ip, 9100), timeout)
+                            withContext(Dispatchers.Main) {
+                                onPrinterFound("TCP:$ip:9100")
+                            }
+                        }
+                    } catch (_: Exception) {}
+                    completedScans.incrementAndGet()
+                } finally {
+                    semaphore.release()
                 }
             }
-        } catch (_: Exception) {}
-
-        delay(delayTime)
-        completedScans++
+        }
     }
 }
 
