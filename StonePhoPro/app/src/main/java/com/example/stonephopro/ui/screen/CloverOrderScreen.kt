@@ -16,13 +16,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.stonephopro.components.Button3D
-import com.example.stonephopro.utils.clover.CloverAuthManager
 import com.example.stonephopro.utils.clover.CloverConfig
 import com.example.stonephopro.utils.clover.CloverOrder
 import com.example.stonephopro.utils.clover.CloverRepository
@@ -65,11 +63,8 @@ private const val GRID_COLS = 6
 
 @Composable
 fun CloverOrderScreen(onBack: () -> Unit) {
-    val context = LocalContext.current
-    val scope   = rememberCoroutineScope()
+    val scope = rememberCoroutineScope()
 
-    var isConnected   by remember { mutableStateOf(CloverAuthManager.isAuthenticated(context)) }
-    var showWebAuth   by remember { mutableStateOf(false) }
     var openOrders    by remember { mutableStateOf<List<CloverOrder>>(emptyList()) }
     var isLoading     by remember { mutableStateOf(false) }
     var errorMsg      by remember { mutableStateOf("") }
@@ -94,40 +89,24 @@ fun CloverOrderScreen(onBack: () -> Unit) {
     }
 
     fun reload() {
-        if (!CloverAuthManager.isAuthenticated(context)) { showWebAuth = true; return }
-        val token = CloverAuthManager.getToken(context)
-        val mid   = CloverAuthManager.getMerchantId(context)
-        if (token.isBlank() || mid.isBlank()) { showWebAuth = true; return }
         isLoading = true
         errorMsg  = ""
         scope.launch {
-            CloverRepository.fetchOpenOrders(CloverConfig.CLOVER_DIRECT_URL, mid, token)
+            // Gọi backend proxy — không cần token Clover, backend tự authenticate
+            CloverRepository.fetchOpenOrdersViaProxy(CloverConfig.PROXY_SECRET)
                 .onSuccess { openOrders = it }
-                .onFailure { errorMsg   = "Lỗi: ${it.message}" }
+                .onFailure { errorMsg   = "Lỗi backend: ${it.message}" }
             isLoading = false
         }
     }
 
-    // Load lần đầu + auto-refresh mỗi 30 giây khi màn hình mở
-    LaunchedEffect(isConnected) {
-        if (isConnected) {
-            reload()
-            while (true) {
-                delay(30_000)
-                if (!isLoading) reload()
-            }
+    // Load ngay khi mở + auto-refresh mỗi 30 giây
+    LaunchedEffect(Unit) {
+        reload()
+        while (true) {
+            delay(30_000)
+            if (!isLoading) reload()
         }
-    }
-
-    if (showWebAuth) {
-        CloverWebAuthDialog(
-            onSuccess = { token, mid ->
-                showWebAuth = false
-                CloverAuthManager.saveAuth(context, token, mid)
-                isConnected = true
-            },
-            onDismiss = { showWebAuth = false }
-        )
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -150,40 +129,20 @@ fun CloverOrderScreen(onBack: () -> Unit) {
                 Box(
                     modifier = Modifier
                         .background(
-                            if (isConnected) Color(0xFF43A047) else Color(0xFFEF6C00),
+                            if (errorMsg.isEmpty()) Color(0xFF43A047) else Color(0xFFEF6C00),
                             RoundedCornerShape(12.dp)
                         )
                         .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
                     Text(
-                        if (isConnected) "● Đã kết nối" else "● Chưa kết nối",
+                        if (errorMsg.isEmpty()) "● Live · ↻ 30s" else "● Lỗi kết nối",
                         color = Color.White, fontSize = 11.sp
                     )
                 }
-                // Chỉ báo auto-refresh
-                if (isConnected) {
-                    Text("↻ 30s", color = Color(0xFF90CAF9), fontSize = 10.sp)
-                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (!isConnected) {
-                    Button3D(
-                        text = "🔐 Kết nối",
-                        onClick = { showWebAuth = true },
-                        gradientColors = listOf(Color(0xFFFF8F00), Color(0xFFE65100)),
-                        fontSize = 13.sp
-                    )
-                } else {
-                    TextButton(onClick = {
-                        CloverAuthManager.logout(context)
-                        isConnected = false
-                        openOrders  = emptyList()
-                    }) {
-                        Text("Đổi token", color = Color(0xFFB0BEC5), fontSize = 12.sp)
-                    }
-                    IconButton(onClick = { if (!isLoading) reload() }) {
-                        Text(if (isLoading) "⏳" else "🔄", fontSize = 18.sp)
-                    }
+                IconButton(onClick = { if (!isLoading) reload() }) {
+                    Text(if (isLoading) "⏳" else "🔄", fontSize = 18.sp)
                 }
                 Button3D(
                     text = "✕ Đóng",
@@ -194,7 +153,7 @@ fun CloverOrderScreen(onBack: () -> Unit) {
             }
         }
 
-        // Lỗi
+        // Lỗi backend
         if (errorMsg.isNotEmpty()) {
             Text(
                 text = errorMsg,
@@ -207,11 +166,11 @@ fun CloverOrderScreen(onBack: () -> Unit) {
             )
         }
 
-        // Thông báo trạng thái dữ liệu
-        if (isConnected && !isLoading) {
+        // Thông báo trạng thái
+        if (!isLoading) {
             val occupiedCount = tableOrderMap.size
             val statusText = if (openOrders.isEmpty())
-                "Không có order nào đang mở — bàn đang hiện là TRỐNG"
+                "Không có order nào đang mở"
             else
                 "${openOrders.size} order đang mở · $occupiedCount bàn có khách"
             Text(
@@ -226,36 +185,12 @@ fun CloverOrderScreen(onBack: () -> Unit) {
         }
 
         // ── Body ─────────────────────────────────────────────────────────────
-        if (!isConnected) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text("🔌", fontSize = 48.sp)
-                    Text(
-                        "Kết nối với Clover POS\nđể xem sơ đồ bàn",
-                        fontSize = 18.sp, color = Color.Gray, textAlign = TextAlign.Center
-                    )
-                    Button3D(
-                        text = "🔐 Đăng nhập Clover",
-                        onClick = { showWebAuth = true },
-                        gradientColors = listOf(Color(0xFF1565C0), Color(0xFF0D47A1)),
-                        fontSize = 16.sp,
-                        modifier = Modifier.height(52.dp).widthIn(min = 220.dp)
-                    )
-                    Text(
-                        "clover.com → Setup → API Tokens → New Token",
-                        fontSize = 12.sp, color = Color(0xFF9E9E9E)
-                    )
-                }
-            }
-        } else if (isLoading && openOrders.isEmpty()) {
+        if (isLoading && openOrders.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator()
                     Spacer(modifier = Modifier.height(12.dp))
-                    Text("Đang tải order từ Clover...")
+                    Text("Đang tải dữ liệu từ server...")
                 }
             }
         } else {
