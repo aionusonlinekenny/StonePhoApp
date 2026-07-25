@@ -4,15 +4,19 @@
 // Sau đó thêm case 'clover' vào index.php (xem cuối file)
 
 require_once __DIR__ . '/../config.php';
-require_once __DIR__ . '/../helpers.php';
 
-auth_required(); // Dùng lại auth của LoyalteApp để bảo vệ endpoint
+// ─── Xác thực API key của StonePhoPro app ────────────────────────────────────
+define('STONEPHO_API_KEY', 'StonePhoClover@2024');
+$authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+$sentKey    = trim(str_replace('Bearer ', '', $authHeader));
+if ($sentKey !== STONEPHO_API_KEY) {
+    http_response_code(401);
+    exit(json_encode(['error' => 'Unauthorized']));
+}
 
 // ─── Cấu hình Clover ─────────────────────────────────────────────────────────
-// Điền merchant_id và api_token của nhà hàng vào đây
-// Hoặc tốt hơn: thêm vào config.php
-if (!defined('CLOVER_MERCHANT_ID')) define('CLOVER_MERCHANT_ID', getenv('CLOVER_MERCHANT_ID') ?: '');
-if (!defined('CLOVER_API_TOKEN'))   define('CLOVER_API_TOKEN',   getenv('CLOVER_API_TOKEN')   ?: '');
+if (!defined('CLOVER_MERCHANT_ID')) define('CLOVER_MERCHANT_ID', '04VMDMMGF5K81');
+if (!defined('CLOVER_API_TOKEN'))   define('CLOVER_API_TOKEN',   '10eeb58d-f5be-e989-2f6d-53363561948a');
 define('CLOVER_API_BASE', 'https://api.clover.com/v3/merchants/' . CLOVER_MERCHANT_ID);
 
 // ─── Helper: gọi Clover API ──────────────────────────────────────────────────

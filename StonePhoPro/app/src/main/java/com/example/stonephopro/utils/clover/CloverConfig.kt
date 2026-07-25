@@ -12,16 +12,19 @@ object CloverConfig {
     // URL backend proxy (stonephovaldosta.com) — không cần OAuth
     const val PROXY_URL = "https://www.stonephovaldosta.com/loyalteapp/backend"
 
+    // Secret key gửi lên proxy — phải khớp với clover.php trên server
+    const val PROXY_SECRET = "StonePhoClover@2024"
+
     // URL Clover trực tiếp — cần OAuth token
     const val CLOVER_DIRECT_URL = "https://api.clover.com"
 
     enum class Mode { PROXY, DIRECT }
 
-    fun saveProxy(context: Context, authToken: String) {
+    fun saveProxy(context: Context) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString(KEY_MODE, "proxy")
             .putString(KEY_BASE_URL, PROXY_URL)
-            .putString(KEY_ACCESS_TOKEN, authToken)  // token LoyalteApp (nếu cần)
+            .putString(KEY_ACCESS_TOKEN, PROXY_SECRET)
             .putString(KEY_MERCHANT_ID, "")
             .apply()
     }

@@ -38,6 +38,9 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
+// Alias để code ngắn hơn
+private typealias Mode = CloverConfig.Mode
+
 private val COLOR_OCCUPIED   = Color(0xFF1565C0)   // xanh đậm — có khách
 private val COLOR_EMPTY      = Color(0xFFEEEEEE)   // xám nhạt — trống
 private val COLOR_TOGO       = Color(0xFF6A1B9A)   // tím — To Go
@@ -47,17 +50,29 @@ fun CloverOrderScreen(onBack: () -> Unit) {
     val context   = LocalContext.current
     val scope     = rememberCoroutineScope()
 
-    // Kiểm tra xem đã OAuth chưa
-    var isAuthenticated by remember { mutableStateOf(CloverAuthManager.isAuthenticated(context)) }
     var showWebAuth by remember { mutableStateOf(false) }
 
     val (savedUrl, savedMid, savedToken) = remember { CloverConfig.load(context) }
-    var baseUrl     by remember { mutableStateOf(savedUrl) }
-    var merchantId  by remember { mutableStateOf(savedMid) }
-    var accessToken by remember { mutableStateOf(savedToken) }
-    // Chỉ mở config thủ công nếu chưa OAuth và cũng chưa nhập tay
-    var showConfig  by remember { mutableStateOf(!isAuthenticated && (savedMid.isEmpty() || savedToken.isEmpty())) }
-    var showToken   by remember { mutableStateOf(false) }
+    var currentMode  by remember { mutableStateOf(CloverConfig.getMode(context)) }
+    var baseUrl      by remember { mutableStateOf(savedUrl) }
+    var merchantId   by remember { mutableStateOf(savedMid) }
+    var accessToken  by remember { mutableStateOf(savedToken) }
+
+    // Kết nối = đã OAuth  HOẶC  đang dùng proxy (không cần OAuth)
+    var isConnected  by remember {
+        mutableStateOf(
+            CloverAuthManager.isAuthenticated(context) || currentMode == Mode.PROXY
+        )
+    }
+    // Mở config chỉ khi chưa có cấu hình nào
+    var showConfig   by remember {
+        mutableStateOf(
+            !CloverAuthManager.isAuthenticated(context) &&
+            currentMode != Mode.PROXY &&
+            (savedMid.isEmpty() || savedToken.isEmpty())
+        )
+    }
+    var showToken    by remember { mutableStateOf(false) }
 
     var tables      by remember { mutableStateOf<List<CloverTable>>(emptyList()) }
     var openOrders  by remember { mutableStateOf<List<CloverOrder>>(emptyList()) }
@@ -87,9 +102,9 @@ fun CloverOrderScreen(onBack: () -> Unit) {
     }
 
     fun reload() {
-        // Ưu tiên token OAuth nếu đã kết nối
+        // Ưu tiên token OAuth nếu đã OAuth
         if (CloverAuthManager.isAuthenticated(context)) {
-            isAuthenticated = true
+            isConnected = true
             val oauthMid   = CloverAuthManager.getMerchantId(context)
             val oauthToken = CloverAuthManager.getToken(context)
             if (oauthMid.isNotBlank())   merchantId  = oauthMid
@@ -97,24 +112,25 @@ fun CloverOrderScreen(onBack: () -> Unit) {
             baseUrl = "https://api.clover.com"
         }
 
-        val useProxy = CloverConfig.getMode(context) == CloverConfig.Mode.PROXY
+        val useProxy = currentMode == Mode.PROXY
         if (!useProxy && (merchantId.isBlank() || accessToken.isBlank())) {
             errorMsg = "Vui lòng kết nối Clover hoặc dùng chế độ Proxy."
             showConfig = true
             return
         }
-        CloverConfig.save(context, baseUrl, merchantId, accessToken)
+        if (!useProxy) CloverConfig.save(context, baseUrl, merchantId, accessToken)
         isLoading = true
         errorMsg  = ""
         selectedOrder = null
         scope.launch {
+            val proxyKey = CloverConfig.PROXY_SECRET
             val ordersResult = if (useProxy)
-                CloverRepository.fetchOpenOrdersViaProxy(accessToken)
+                CloverRepository.fetchOpenOrdersViaProxy(proxyKey)
             else
                 CloverRepository.fetchOpenOrders(baseUrl, merchantId, accessToken)
 
             val tablesResult = if (useProxy)
-                CloverRepository.fetchTablesViaProxy(accessToken)
+                CloverRepository.fetchTablesViaProxy(proxyKey)
             else
                 CloverRepository.fetchTables(baseUrl, merchantId, accessToken)
 
@@ -138,13 +154,19 @@ fun CloverOrderScreen(onBack: () -> Unit) {
         }
     }
 
+    // Tự động load dữ liệu khi mở màn hình (nếu đã có cấu hình)
+    LaunchedEffect(Unit) {
+        if (isConnected) reload()
+    }
+
     // WebView OAuth dialog
     if (showWebAuth) {
         CloverWebAuthDialog(
-            onSuccess = { token, merchantId ->
+            onSuccess = { token, mid ->
                 showWebAuth = false
-                CloverAuthManager.saveAuth(context, token, merchantId)
-                isAuthenticated = true
+                CloverAuthManager.saveAuth(context, token, mid)
+                isConnected = true
+                currentMode = Mode.DIRECT
                 reload()
             },
             onDismiss = { showWebAuth = false }
@@ -170,31 +192,35 @@ fun CloverOrderScreen(onBack: () -> Unit) {
                     Box(
                         modifier = Modifier
                             .background(
-                                if (isAuthenticated) Color(0xFF43A047) else Color(0xFFEF6C00),
+                                if (isConnected) Color(0xFF43A047) else Color(0xFFEF6C00),
                                 RoundedCornerShape(12.dp)
                             )
                             .padding(horizontal = 8.dp, vertical = 3.dp)
                     ) {
                         Text(
-                            text = if (isAuthenticated) "● Đã kết nối" else "● Chưa kết nối",
+                            text = when {
+                                isConnected && currentMode == Mode.PROXY -> "● Server Proxy"
+                                isConnected -> "● Đã kết nối"
+                                else -> "● Chưa kết nối"
+                            },
                             color = Color.White,
                             fontSize = 11.sp
                         )
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // Nút OAuth — hiển thị khi chưa kết nối
-                    if (!isAuthenticated) {
+                    // Nút OAuth — chỉ hiện khi dùng Direct mode và chưa kết nối
+                    if (currentMode == Mode.DIRECT && !CloverAuthManager.isAuthenticated(context)) {
                         Button3D(
                             text = "🔐 Kết nối Clover",
                             onClick = { showWebAuth = true },
                             gradientColors = listOf(Color(0xFFFF8F00), Color(0xFFE65100)),
                             fontSize = 13.sp
                         )
-                    } else {
+                    } else if (CloverAuthManager.isAuthenticated(context)) {
                         TextButton(onClick = {
                             CloverAuthManager.logout(context)
-                            isAuthenticated = false
+                            isConnected = currentMode == Mode.PROXY
                             merchantId = ""
                             accessToken = ""
                         }) {
@@ -219,79 +245,96 @@ fun CloverOrderScreen(onBack: () -> Unit) {
             // ── Config panel ─────────────────────────────────────────────────
             AnimatedVisibility(visible = showConfig) {
                 Surface(shadowElevation = 4.dp) {
-                    Column(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
 
                         // Chọn chế độ kết nối
-                        val currentMode = CloverConfig.getMode(context)
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button3D(
                                 text = "🌐 Qua Server (Khuyên dùng)",
                                 onClick = {
-                                    CloverConfig.saveProxy(context, accessToken)
+                                    CloverConfig.saveProxy(context)
+                                    currentMode = Mode.PROXY
+                                    isConnected = true
                                     showConfig = false
                                     reload()
                                 },
                                 modifier = Modifier.weight(1f).height(44.dp),
-                                gradientColors = if (currentMode == CloverConfig.Mode.PROXY)
+                                gradientColors = if (currentMode == Mode.PROXY)
                                     listOf(Color(0xFF2E7D32), Color(0xFF1B5E20))
                                 else listOf(Color(0xFF78909C), Color(0xFF546E7A)),
                                 fontSize = 12.sp
                             )
                             Button3D(
                                 text = "🔑 Clover Trực tiếp",
-                                onClick = { /* chỉ dùng form bên dưới */ },
+                                onClick = { currentMode = Mode.DIRECT },
                                 modifier = Modifier.weight(1f).height(44.dp),
-                                gradientColors = if (currentMode == CloverConfig.Mode.DIRECT)
+                                gradientColors = if (currentMode == Mode.DIRECT)
                                     listOf(Color(0xFF1565C0), Color(0xFF0D47A1))
                                 else listOf(Color(0xFF78909C), Color(0xFF546E7A)),
                                 fontSize = 12.sp
                             )
                         }
-                        Text(
-                            "🌐 Proxy: dùng server stonephovaldosta.com — không cần OAuth\n" +
-                            "🔑 Trực tiếp: gọi Clover API thẳng — cần bấm 'Kết nối Clover' bên trên",
-                            fontSize = 11.sp, color = Color.Gray
-                        )
-                        Divider()
 
-                        OutlinedTextField(
-                            value = baseUrl,
-                            onValueChange = { baseUrl = it },
-                            label = { Text("Base URL") },
-                            placeholder = { Text("https://192.168.x.x  hoặc  https://api.clover.com") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
-                        )
-                        OutlinedTextField(
-                            value = merchantId,
-                            onValueChange = { merchantId = it },
-                            label = { Text("Merchant ID (mId)") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
-                        )
-                        OutlinedTextField(
-                            value = accessToken,
-                            onValueChange = { accessToken = it },
-                            label = { Text("Access Token") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
-                            trailingIcon = {
-                                Text(
-                                    text = if (showToken) "Ẩn" else "Hiện",
-                                    modifier = Modifier.clickable { showToken = !showToken }.padding(end = 8.dp),
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontSize = 13.sp
-                                )
+                        if (currentMode == Mode.PROXY) {
+                            // Proxy mode: không cần nhập gì
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFFE8F5E9), RoundedCornerShape(8.dp))
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text("✅", fontSize = 20.sp)
+                                Column {
+                                    Text("Đang dùng server proxy", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    Text("stonephovaldosta.com — không cần nhập credentials", fontSize = 11.sp, color = Color.Gray)
+                                }
                             }
-                        )
-                        Button3D(
-                            text = "💾 Lưu & Kết nối",
-                            onClick = { showConfig = false; reload() },
-                            modifier = Modifier.fillMaxWidth().height(44.dp),
-                            gradientColors = listOf(Color(0xFF42A5F5), Color(0xFF1565C0))
-                        )
+                            Button3D(
+                                text = "🔄 Tải dữ liệu",
+                                onClick = { showConfig = false; reload() },
+                                modifier = Modifier.fillMaxWidth().height(44.dp),
+                                gradientColors = listOf(Color(0xFF42A5F5), Color(0xFF1565C0))
+                            )
+                        } else {
+                            // Direct mode: nhập credentials thủ công
+                            Text("Nhập credentials Clover hoặc bấm '🔐 Kết nối Clover' ở trên", fontSize = 11.sp, color = Color.Gray)
+                            Divider()
+                            OutlinedTextField(
+                                value = merchantId,
+                                onValueChange = { merchantId = it },
+                                label = { Text("Merchant ID (mId)") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = accessToken,
+                                onValueChange = { accessToken = it },
+                                label = { Text("Access Token") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
+                                trailingIcon = {
+                                    Text(
+                                        text = if (showToken) "Ẩn" else "Hiện",
+                                        modifier = Modifier.clickable { showToken = !showToken }.padding(end = 8.dp),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                            )
+                            Button3D(
+                                text = "💾 Lưu & Kết nối",
+                                onClick = {
+                                    isConnected = merchantId.isNotBlank() && accessToken.isNotBlank()
+                                    showConfig = false
+                                    reload()
+                                },
+                                modifier = Modifier.fillMaxWidth().height(44.dp),
+                                gradientColors = listOf(Color(0xFF42A5F5), Color(0xFF1565C0))
+                            )
+                        }
                     }
                 }
             }
@@ -344,8 +387,8 @@ fun CloverOrderScreen(onBack: () -> Unit) {
                         Text("Chưa có dữ liệu", fontSize = 16.sp, color = Color.Gray)
                         Spacer(modifier = Modifier.height(16.dp))
                         Button3D(
-                            text = "🔄 Kết nối Clover",
-                            onClick = { if (merchantId.isBlank()) showConfig = true else reload() },
+                            text = "🔄 Tải lại",
+                            onClick = { if (isConnected) reload() else showConfig = true },
                             gradientColors = listOf(Color(0xFF42A5F5), Color(0xFF1565C0))
                         )
                     }
