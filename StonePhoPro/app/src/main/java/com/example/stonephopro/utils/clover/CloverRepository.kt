@@ -54,8 +54,9 @@ object CloverRepository {
         proxyToken: String
     ): Result<List<CloverOrder>> = withContext(Dispatchers.IO) {
         runCatching {
-            val url = "${CloverConfig.PROXY_URL}/api/clover/orders"
-            gson.fromJson(get(url, proxyToken), CloverOrdersResponse::class.java).elements
+            val url = "${CloverConfig.PROXY_URL}?action=orders"
+            val json = get(url, proxyToken)
+            gson.fromJson(json, CloverOrdersResponse::class.java).elements.orEmpty()
         }
     }
 
@@ -63,8 +64,8 @@ object CloverRepository {
         proxyToken: String
     ): Result<List<CloverTable>> = withContext(Dispatchers.IO) {
         runCatching {
-            val url = "${CloverConfig.PROXY_URL}/api/clover/tables"
-            gson.fromJson(get(url, proxyToken), CloverTablesResponse::class.java).elements
+            val url = "${CloverConfig.PROXY_URL}?action=tables"
+            gson.fromJson(get(url, proxyToken), CloverTablesResponse::class.java).elements.orEmpty()
         }
     }
 

@@ -9,8 +9,8 @@ object CloverConfig {
     private const val KEY_MERCHANT_ID  = "merchant_id"
     private const val KEY_ACCESS_TOKEN = "access_token"
 
-    // URL backend proxy (stonephovaldosta.com) — không cần OAuth
-    const val PROXY_URL = "https://www.stonephovaldosta.com/loyalteapp/backend"
+    // Standalone proxy file — không cần sửa index.php, upload 1 file là xong
+    const val PROXY_URL = "https://www.stonephovaldosta.com/loyalteapp/backend/stonepho_clover.php"
 
     // Secret key gửi lên proxy — phải khớp với clover.php trên server
     const val PROXY_SECRET = "StonePhoClover@2024"
