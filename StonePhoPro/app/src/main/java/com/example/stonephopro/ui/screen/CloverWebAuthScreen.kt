@@ -14,6 +14,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -28,11 +30,14 @@ fun CloverWebAuthDialog(
     onSuccess: (token: String, merchantId: String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var isLoading       by remember { mutableStateOf(true) }
-    var noTokenMsg      by remember { mutableStateOf("") }
+    var isLoading          by remember { mutableStateOf(true) }
+    var noTokenMsg         by remember { mutableStateOf("") }
+    var detectedMerchantId by remember { mutableStateOf("") }
+    var manualToken        by remember { mutableStateOf("") }
+    var showToken          by remember { mutableStateOf(false) }
     val authUrl = remember { CloverAuthManager.buildAuthUrl() }
 
-    // Xử lý khi bắt được callback URL (dùng chung cho cả onPageStarted và shouldOverride)
+    // Xử lý khi bắt được callback URL
     fun handleCallbackUrl(url: String, stopFn: (() -> Unit)? = null): Boolean {
         if (!url.startsWith(CloverAuthManager.REDIRECT_URI)) return false
         stopFn?.invoke()
@@ -40,11 +45,10 @@ fun CloverWebAuthDialog(
         if (result != null) {
             onSuccess(result.first, result.second)
         } else {
-            // Redirect OK nhưng không có token — merchant cần disconnect rồi reconnect
+            // Có merchant_id nhưng không có token — hiện form nhập token thủ công
             val mid = Uri.parse(url).getQueryParameter("merchant_id") ?: ""
-            noTokenMsg = "Clover kết nối thành công nhưng chưa trả token.\n\n" +
-                "Vui lòng:\n1. Vào Clover App Market\n2. Tìm StonePhoApp\n3. Bấm Disconnect\n4. Bấm Connect lại\n\n" +
-                if (mid.isNotEmpty()) "Merchant ID: $mid" else ""
+            detectedMerchantId = mid
+            noTokenMsg = mid
         }
         return true
     }
@@ -129,29 +133,70 @@ fun CloverWebAuthDialog(
                         }
                     }
 
-                    // Hiện khi kết nối được nhưng không có token
+                    // Form nhập token thủ công khi OAuth không trả về token
                     if (noTokenMsg.isNotEmpty()) {
                         Box(
                             modifier = Modifier.fillMaxSize().background(Color.White),
                             contentAlignment = Alignment.Center
                         ) {
                             Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(16.dp),
-                                modifier = Modifier.padding(32.dp)
+                                modifier = Modifier.padding(28.dp),
+                                verticalArrangement = Arrangement.spacedBy(14.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Text("⚠️", fontSize = 48.sp)
+                                Text("🔑", fontSize = 36.sp)
                                 Text(
-                                    noTokenMsg,
-                                    textAlign = TextAlign.Center,
-                                    fontSize = 14.sp,
-                                    color = Color(0xFF424242)
+                                    "Nhập API Token của Clover",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 17.sp
                                 )
-                                Button(
-                                    onClick = onDismiss,
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
+                                Text(
+                                    "Merchant ID: $detectedMerchantId",
+                                    fontSize = 13.sp,
+                                    color = Color(0xFF1565C0),
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Divider()
+                                Text(
+                                    "Cách lấy token:\n1. Mở clover.com → đăng nhập nhà hàng\n2. Vào Setup → API Tokens\n3. Bấm New Token → chọn Orders + Inventory\n4. Copy token dán vào đây",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF616161),
+                                    textAlign = TextAlign.Start
+                                )
+                                OutlinedTextField(
+                                    value = manualToken,
+                                    onValueChange = { manualToken = it },
+                                    label = { Text("API Token") },
+                                    placeholder = { Text("Paste token vào đây") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    visualTransformation = if (showToken)
+                                        VisualTransformation.None
+                                    else PasswordVisualTransformation(),
+                                    trailingIcon = {
+                                        TextButton(onClick = { showToken = !showToken }) {
+                                            Text(if (showToken) "Ẩn" else "Hiện", fontSize = 12.sp)
+                                        }
+                                    }
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Text("Đóng", color = Color.White)
+                                    OutlinedButton(
+                                        onClick = onDismiss,
+                                        modifier = Modifier.weight(1f)
+                                    ) { Text("Huỷ") }
+                                    Button(
+                                        onClick = {
+                                            if (manualToken.isNotBlank()) {
+                                                onSuccess(manualToken.trim(), detectedMerchantId)
+                                            }
+                                        },
+                                        enabled = manualToken.isNotBlank(),
+                                        modifier = Modifier.weight(1f),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
+                                    ) { Text("Kết nối", color = Color.White) }
                                 }
                             }
                         }
