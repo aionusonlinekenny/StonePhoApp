@@ -28,7 +28,8 @@ fun HeaderScreen(
     onManageMenu: () -> Unit,
     onSettings: () -> Unit,
     onOpenInventory: () -> Unit,
-    onRequireInvoicePassword: () -> Unit // ✅ callback để mở popup nhập mật khẩu ở OrderScreen
+    onOpenClover: () -> Unit,
+    onRequireInvoicePassword: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
     var showQuickPayDialog by remember { mutableStateOf(false) }
@@ -104,6 +105,14 @@ fun HeaderScreen(
                 text = { Text("📦 Inventory", fontSize = 22.sp) },
                 onClick = {
                     onOpenInventory()
+                    showMenu = false
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("🖥️ Clover POS Orders", fontSize = 22.sp) },
+                modifier = Modifier.height(56.dp),
+                onClick = {
+                    onOpenClover()
                     showMenu = false
                 }
             )

@@ -34,7 +34,7 @@ fun OrderScreen(viewModel: OrderViewModel) {
     var readyBody by remember { mutableStateOf(false) }
     var readyReceipt by remember { mutableStateOf(false) }
     var showInventoryScreen by remember { mutableStateOf(false) }
-    // ⬇️ Thêm các biến xử lý phân quyền
+    var showCloverScreen by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showManageMenu by remember { mutableStateOf(false) }
     var showInvoiceScreen by remember { mutableStateOf(false) }
@@ -85,7 +85,9 @@ fun OrderScreen(viewModel: OrderViewModel) {
                 showInventoryScreen -> InventoryScreen(
                     viewModel = remember { InventoryViewModel(context) },
                     onBack = { showInventoryScreen = false },
-
+                )
+                showCloverScreen -> CloverOrderScreen(
+                    onBack = { showCloverScreen = false }
                 )
                 else -> {
                     Column(modifier = Modifier.fillMaxSize()) {
@@ -94,9 +96,10 @@ fun OrderScreen(viewModel: OrderViewModel) {
                                 viewModel = viewModel,
                                 onManageMenu = { showManageMenu = true },
                                 onSettings = { showSettings = true },
-                                onRequireInvoicePassword = { showInvoicePasswordDialog = true }, // ✅ gọi popup nhập mật khẩu
-                                onOpenInventory = { showInventoryScreen = true } // ✅ thêm dòng này
-                                )
+                                onRequireInvoicePassword = { showInvoicePasswordDialog = true },
+                                onOpenInventory = { showInventoryScreen = true },
+                                onOpenClover = { showCloverScreen = true }
+                            )
                         }
                         Row(modifier = Modifier.weight(1f)) {
                             Column(modifier = Modifier.weight(0.7f)) {
