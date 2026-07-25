@@ -49,6 +49,16 @@ object CloverConfig {
             .apply()
     }
 
+    fun getManualTableCount(context: Context): Int =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt("manual_table_count", 0)
+
+    fun setManualTableCount(context: Context, count: Int) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putInt("manual_table_count", count)
+            .apply()
+    }
+
     fun getMode(context: Context): Mode {
         val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(KEY_MODE, "direct")

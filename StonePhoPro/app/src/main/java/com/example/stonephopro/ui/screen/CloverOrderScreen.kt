@@ -13,8 +13,11 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,6 +47,7 @@ fun CloverOrderScreen(onBack: () -> Unit) {
 
     var isConnected  by remember { mutableStateOf(CloverAuthManager.isAuthenticated(context)) }
     var showWebAuth  by remember { mutableStateOf(false) }
+    var showTableCountDialog by remember { mutableStateOf(false) }
 
     var tables      by remember { mutableStateOf<List<CloverTable>>(emptyList()) }
     var openOrders  by remember { mutableStateOf<List<CloverOrder>>(emptyList()) }
@@ -101,7 +105,16 @@ fun CloverOrderScreen(onBack: () -> Unit) {
                             .mapNotNull { o -> o.tableLabel?.takeIf { l -> l.isNotBlank() } }
                             .distinct().sorted()
                             .map { lbl -> CloverTable(id = lbl, name = lbl) }
-                        if (fromOrders.isNotEmpty()) tables = fromOrders
+                        if (fromOrders.isNotEmpty()) {
+                            tables = fromOrders
+                        } else {
+                            val count = CloverConfig.getManualTableCount(context)
+                            if (count > 0) {
+                                tables = (1..count).map { n ->
+                                    CloverTable(id = n.toString(), name = n.toString())
+                                }
+                            }
+                        }
                     }
                 }
                 .onFailure { err ->
@@ -109,9 +122,18 @@ fun CloverOrderScreen(onBack: () -> Unit) {
                         .mapNotNull { o -> o.tableLabel?.takeIf { l -> l.isNotBlank() } }
                         .distinct().sorted()
                         .map { lbl -> CloverTable(id = lbl, name = lbl) }
-                    if (fromOrders.isNotEmpty()) tables = fromOrders
-                    else if (errorMsg.isEmpty())
-                        errorMsg = "Không tải được bàn: ${err.message}"
+                    if (fromOrders.isNotEmpty()) {
+                        tables = fromOrders
+                    } else {
+                        val count = CloverConfig.getManualTableCount(context)
+                        if (count > 0) {
+                            tables = (1..count).map { n ->
+                                CloverTable(id = n.toString(), name = n.toString())
+                            }
+                        } else if (errorMsg.isEmpty()) {
+                            errorMsg = "Không tải được bàn: ${err.message}"
+                        }
+                    }
                 }
 
             hasLoaded = true
@@ -122,6 +144,23 @@ fun CloverOrderScreen(onBack: () -> Unit) {
     // Tự load khi đã kết nối
     LaunchedEffect(Unit) {
         if (isConnected) reload()
+    }
+
+    // Dialog cấu hình số bàn thủ công
+    if (showTableCountDialog) {
+        TableCountDialog(
+            currentCount = CloverConfig.getManualTableCount(context),
+            onConfirm = { count ->
+                CloverConfig.setManualTableCount(context, count)
+                showTableCountDialog = false
+                if (count > 0) {
+                    tables = (1..count).map { n ->
+                        CloverTable(id = n.toString(), name = n.toString())
+                    }
+                }
+            },
+            onDismiss = { showTableCountDialog = false }
+        )
     }
 
     // OAuth WebView
@@ -293,12 +332,13 @@ fun CloverOrderScreen(onBack: () -> Unit) {
                                     val lbl = t.name.lowercase()
                                     !lbl.contains("go") && !lbl.contains("takeout")
                                 },
-                                tableOrderMap = tableOrderMap,
-                                selectedOrder = selectedOrder,
-                                hasLoaded     = hasLoaded,
-                                onTableClick  = { order ->
+                                tableOrderMap   = tableOrderMap,
+                                selectedOrder   = selectedOrder,
+                                hasLoaded       = hasLoaded,
+                                onTableClick    = { order ->
                                     selectedOrder = if (selectedOrder?.id == order?.id) null else order
-                                }
+                                },
+                                onConfigTables  = { showTableCountDialog = true }
                             )
                             else -> ToGoList(
                                 orders = toGoOrders,
@@ -336,16 +376,31 @@ private fun DiningRoomGrid(
     tableOrderMap: Map<String, CloverOrder>,
     selectedOrder: CloverOrder?,
     hasLoaded: Boolean,
-    onTableClick: (CloverOrder?) -> Unit
+    onTableClick: (CloverOrder?) -> Unit,
+    onConfigTables: () -> Unit = {}
 ) {
     if (tables.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                if (hasLoaded) "Không có bàn nào từ Clover.\nBấm 🔄 để tải lại."
-                else "Đang chờ dữ liệu...",
-                textAlign = TextAlign.Center,
-                color = Color.Gray
-            )
+            if (!hasLoaded) {
+                Text("Đang chờ dữ liệu...", color = Color.Gray)
+            } else {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        "Clover không trả về danh sách bàn.\nNhà hàng có bao nhiêu bàn?",
+                        textAlign = TextAlign.Center,
+                        color = Color.Gray
+                    )
+                    Button(
+                        onClick = onConfigTables,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
+                    ) {
+                        Text("⚙️ Cấu hình số bàn")
+                    }
+                }
+            }
         }
         return
     }
@@ -584,6 +639,58 @@ private fun OrderDetailPanel(
                     fontSize   = 20.sp,
                     color      = Color(0xFF1565C0)
                 )
+            }
+        }
+    }
+}
+
+// ── Dialog cấu hình số bàn ────────────────────────────────────────────────────
+@Composable
+private fun TableCountDialog(
+    currentCount: Int,
+    onConfirm: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var input by remember { mutableStateOf(if (currentCount > 0) currentCount.toString() else "") }
+    val count = input.toIntOrNull() ?: 0
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text("⚙️ Cấu hình số bàn", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text(
+                    "Nhập số bàn nhà hàng (vd: 18).\nApp sẽ hiển thị Bàn 1 đến Bàn N.",
+                    fontSize = 13.sp,
+                    color = Color.Gray
+                )
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { v -> input = v.filter { it.isDigit() }.take(3) },
+                    label = { Text("Số bàn") },
+                    placeholder = { Text("Vd: 18") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                        Text("Huỷ")
+                    }
+                    Button(
+                        onClick = { if (count > 0) onConfirm(count) },
+                        enabled = count in 1..200,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
+                    ) {
+                        Text("✅ Lưu", color = Color.White)
+                    }
+                }
             }
         }
     }

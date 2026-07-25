@@ -33,16 +33,23 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("C:/Users/stone/AndroidStudioProjects/StonePhoPro/stonephopos.keystore.jks")
-            storePassword = "stone123"
-            keyAlias = "stonepho"
-            keyPassword = "stone123"
+            val ksPath = "C:/Users/stone/AndroidStudioProjects/StonePhoPro/stonephopos.keystore.jks"
+            // Only set storeFile if path is not a Windows absolute path (CI/Linux build)
+            if (!ksPath.matches(Regex("^[A-Za-z]:/.*"))) {
+                storeFile = file(ksPath)
+                storePassword = "stone123"
+                keyAlias = "stonepho"
+                keyPassword = "stone123"
+            }
         }
     }
 
     buildTypes {
         getByName("release") {
-            signingConfig = signingConfigs.getByName("release")
+            val releaseSigning = signingConfigs.getByName("release")
+            if (releaseSigning.storeFile != null) {
+                signingConfig = releaseSigning
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
