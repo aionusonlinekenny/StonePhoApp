@@ -28,8 +28,6 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import android.content.Intent
-import android.net.Uri
 import com.example.stonephopro.components.Button3D
 import com.example.stonephopro.utils.clover.CloverAuthManager
 import com.example.stonephopro.utils.clover.CloverConfig
@@ -51,6 +49,7 @@ fun CloverOrderScreen(onBack: () -> Unit) {
 
     // Kiểm tra xem đã OAuth chưa
     var isAuthenticated by remember { mutableStateOf(CloverAuthManager.isAuthenticated(context)) }
+    var showWebAuth by remember { mutableStateOf(false) }
 
     val (savedUrl, savedMid, savedToken) = remember { CloverConfig.load(context) }
     var baseUrl     by remember { mutableStateOf(savedUrl) }
@@ -131,6 +130,19 @@ fun CloverOrderScreen(onBack: () -> Unit) {
         }
     }
 
+    // WebView OAuth dialog
+    if (showWebAuth) {
+        CloverWebAuthDialog(
+            onSuccess = { token, merchantId ->
+                showWebAuth = false
+                CloverAuthManager.saveAuth(context, token, merchantId)
+                isAuthenticated = true
+                reload()
+            },
+            onDismiss = { showWebAuth = false }
+        )
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
 
@@ -167,12 +179,7 @@ fun CloverOrderScreen(onBack: () -> Unit) {
                     if (!isAuthenticated) {
                         Button3D(
                             text = "🔐 Kết nối Clover",
-                            onClick = {
-                                val authUrl = CloverAuthManager.buildAuthUrl()
-                                context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse(authUrl))
-                                )
-                            },
+                            onClick = { showWebAuth = true },
                             gradientColors = listOf(Color(0xFFFF8F00), Color(0xFFE65100)),
                             fontSize = 13.sp
                         )

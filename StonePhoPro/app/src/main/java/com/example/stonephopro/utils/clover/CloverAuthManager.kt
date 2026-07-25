@@ -3,42 +3,30 @@ package com.example.stonephopro.utils.clover
 import android.content.Context
 import android.net.Uri
 import com.example.stonephopro.BuildConfig
-import com.google.gson.Gson
-import com.google.gson.annotations.SerializedName
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.net.URL
 
 object CloverAuthManager {
 
-    const val REDIRECT_URI = "stonepho://clover/oauth"
+    // URL này phải khớp với Site URL đã nhập trên Clover Developer Dashboard
+    const val REDIRECT_URI = "https://stonepho.app/clover/callback"
 
-    private val APP_ID     get() = BuildConfig.CLOVER_APP_ID
-    private val APP_SECRET get() = BuildConfig.CLOVER_APP_SECRET
+    private val APP_ID get() = BuildConfig.CLOVER_APP_ID
 
-    // URL mở trình duyệt để merchant đăng nhập Clover và cấp quyền
+    // URL mở trong WebView để merchant đăng nhập Clover
+    // Dùng "Token (Testing Only)" trên dashboard → Clover trả token thẳng trong redirect URL
     fun buildAuthUrl(): String =
         "https://www.clover.com/oauth/authorize" +
         "?client_id=$APP_ID" +
-        "&response_type=code" +
+        "&response_type=token" +
         "&redirect_uri=${Uri.encode(REDIRECT_URI)}"
 
-    // Đổi authorization code → access_token (Clover dùng GET, không phải POST)
-    suspend fun exchangeCodeForToken(code: String): String? = withContext(Dispatchers.IO) {
-        runCatching {
-            val url = "https://www.clover.com/oauth/token" +
-                "?client_id=$APP_ID&client_secret=$APP_SECRET&code=$code"
-            val conn = URL(url).openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 10_000
-            conn.readTimeout    = 10_000
-            val body = try {
-                if (conn.responseCode !in 200..299) return@runCatching null
-                conn.inputStream.bufferedReader().readText()
-            } finally {
-                conn.disconnect()
-            }
-            Gson().fromJson(body, CloverTokenResponse::class.java)?.accessToken
-        }.getOrNull()
+    // Không cần exchange code — token nằm thẳng trong URL callback
+    // URL dạng: https://stonepho.app/clover/callback?merchant_id=XXX&token=YYY&client_id=ZZZ
+    fun parseTokenFromRedirect(url: String): Pair<String, String>? {
+        if (!url.startsWith(REDIRECT_URI)) return null
+        val uri = Uri.parse(url)
+        val token      = uri.getQueryParameter("token")      ?: uri.getQueryParameter("access_token") ?: return null
+        val merchantId = uri.getQueryParameter("merchant_id") ?: ""
+        return Pair(token, merchantId)
     }
 
     private const val PREFS = "clover_auth"
@@ -71,7 +59,3 @@ object CloverAuthManager {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
     }
 }
-
-private data class CloverTokenResponse(
-    @SerializedName("access_token") val accessToken: String?
-)
