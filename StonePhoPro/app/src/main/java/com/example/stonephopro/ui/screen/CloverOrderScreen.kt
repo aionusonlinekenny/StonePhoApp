@@ -31,26 +31,34 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
-private val COLOR_OCCUPIED = Color(0xFF1565C0)
-private val COLOR_EMPTY    = Color(0xFFE8EAF6)
-private val COLOR_SELECTED = Color(0xFF0D47A1)
+private val COLOR_OCCUPIED = Color(0xFF1565C0)   // xanh đậm = có order
+private val COLOR_EMPTY    = Color(0xFFD0D0D0)   // xám = trống
+private val COLOR_SELECTED = Color(0xFF0D47A1)   // xanh đậm hơn = đang chọn
 
-// ── Layout bàn khớp với Clover Dining trên thiết bị thực tế ──────────────────
-// Mỗi TableSlot có vị trí (row, col) trong lưới 5×5
+// ── Layout bàn ĐÚNG theo Clover Dining thiết bị thực tế ──────────────────────
+// Grid 5 hàng × 5 cột, (row=0 = hàng trên cùng, col=0 = cột trái nhất)
+//
+//  Col:    0      1      2      3      4
+//  Row 0: OUTS   .      .      .      .
+//  Row 1:  4     7     11     15      .
+//  Row 2:  3     6     10     14     18
+//  Row 3:  2     5      9     13     17
+//  Row 4:  1     .      8     12     16
+//
 private data class TableSlot(val row: Int, val col: Int, val name: String, val seats: Int = 4)
 
-//  Col:  0     1     2     3     4
 private val DINING_ROOM_LAYOUT = listOf(
-    // Row 0
-    TableSlot(0, 0, "16"), TableSlot(0, 1, "12"), TableSlot(0, 2, "8"),                          TableSlot(0, 4, "1"),
-    // Row 1
-    TableSlot(1, 0, "17"), TableSlot(1, 1, "13"), TableSlot(1, 2, "9"),  TableSlot(1, 3, "5"),  TableSlot(1, 4, "2"),
-    // Row 2
-    TableSlot(2, 0, "18"), TableSlot(2, 1, "14"), TableSlot(2, 2, "10"), TableSlot(2, 3, "6"),  TableSlot(2, 4, "3"),
-    // Row 3
-                           TableSlot(3, 1, "15"), TableSlot(3, 2, "11"), TableSlot(3, 3, "7"),  TableSlot(3, 4, "4"),
-    // Row 4
-                                                                                                  TableSlot(4, 4, "OUTS"),
+    // Cột 0: OUTS + Bàn 1-4
+    TableSlot(0, 0, "OUTS"),
+    TableSlot(1, 0, "4"),  TableSlot(2, 0, "3"),  TableSlot(3, 0, "2"),  TableSlot(4, 0, "1"),
+    // Cột 1: Bàn 5-7 (chỉ 3 bàn)
+    TableSlot(1, 1, "7"),  TableSlot(2, 1, "6"),  TableSlot(3, 1, "5"),
+    // Cột 2: Bàn 8-11
+    TableSlot(1, 2, "11"), TableSlot(2, 2, "10"), TableSlot(3, 2, "9"),  TableSlot(4, 2, "8"),
+    // Cột 3: Bàn 12-15
+    TableSlot(1, 3, "15"), TableSlot(2, 3, "14"), TableSlot(3, 3, "13"), TableSlot(4, 3, "12"),
+    // Cột 4: Bàn 16-18 (chỉ 3 bàn, không có hàng 0 và 1)
+    TableSlot(2, 4, "18"), TableSlot(3, 4, "17"), TableSlot(4, 4, "16"),
 )
 private const val GRID_ROWS = 5
 private const val GRID_COLS = 5
@@ -196,6 +204,24 @@ fun CloverOrderScreen(onBack: () -> Unit) {
                     .fillMaxWidth()
                     .background(Color(0xFFFFEBEE))
                     .padding(horizontal = 16.dp, vertical = 6.dp)
+            )
+        }
+
+        // Thông báo trạng thái dữ liệu
+        if (isConnected && !isLoading) {
+            val occupiedCount = tableOrderMap.size
+            val statusText = if (openOrders.isEmpty())
+                "Không có order nào đang mở — bàn đang hiện là TRỐNG"
+            else
+                "${openOrders.size} order đang mở · $occupiedCount bàn có khách"
+            Text(
+                text = statusText,
+                fontSize = 11.sp,
+                color = Color(0xFF616161),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFF5F5F5))
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
             )
         }
 
@@ -372,32 +398,25 @@ private fun TableCell(
                 if (isSelected) Modifier.border(2.dp, Color(0xFF64B5F6), RoundedCornerShape(10.dp))
                 else Modifier
             )
-            .clickable(enabled = isOccupied || true, onClick = onClick),
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // Chair icon
-            Text("🪑", fontSize = if (label.length <= 2) 14.sp else 10.sp)
+            Text("🪑", fontSize = 12.sp)
             Text(
                 label,
                 color = textColor,
                 fontWeight = FontWeight.Bold,
-                fontSize = if (label.length <= 2) 20.sp else 14.sp
+                fontSize = if (label.length <= 2) 18.sp else 12.sp
             )
-            if (!isOccupied) {
-                Text(seats.toString(), fontSize = 11.sp, color = textColor.copy(alpha = 0.6f))
-            }
-            if (isOccupied && total != null) {
-                Text(
-                    formatCents(total),
-                    color = textColor.copy(alpha = 0.9f),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
+            Text(
+                if (isOccupied && total != null) formatCents(total) else "$seats 🪑",
+                color = textColor.copy(alpha = 0.75f),
+                fontSize = 10.sp
+            )
         }
     }
 }
