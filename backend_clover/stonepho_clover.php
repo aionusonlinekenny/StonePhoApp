@@ -36,8 +36,8 @@ if (get_sent_key() !== API_KEY) {
 }
 
 // ── Clover credentials ────────────────────────────────────────────────────────
-define('MID',   '04VMDMMGF5K81');
-define('TOKEN', '10eeb58d-f5be-e989-2f6d-53363561948a');
+define('MID',   'GW3XFCV71AK81');
+define('TOKEN', 'c30698f2-347e-add6-b758-44285d0e6cac');
 define('BASE',  'https://api.clover.com/v3/merchants/' . MID);
 
 function clover(string $path): string {
