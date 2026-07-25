@@ -18,25 +18,21 @@ object CloverRepository {
 
     private val gson = Gson()
 
-    // Trust-all SSL factory cho Clover device LAN (dùng self-signed cert)
+    // Trust-all SSL cho Clover LAN device (self-signed cert)
     private val trustAllFactory: SSLSocketFactory by lazy {
         val trustAll = arrayOf<TrustManager>(object : X509TrustManager {
             override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
             override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
             override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
         })
-        val ctx = SSLContext.getInstance("TLS")
-        ctx.init(null, trustAll, SecureRandom())
-        ctx.socketFactory
+        SSLContext.getInstance("TLS").also { it.init(null, trustAll, SecureRandom()) }.socketFactory
     }
-
     private val trustAllHostname = HostnameVerifier { _, _ -> true }
 
-    private fun isLocal(baseUrl: String) = !baseUrl.contains("api.clover.com")
-
-    private fun get(urlStr: String, token: String, baseUrl: String): String {
+    private fun get(urlStr: String, token: String): String {
         val conn = URL(urlStr).openConnection() as HttpURLConnection
-        if (isLocal(baseUrl) && conn is HttpsURLConnection) {
+        // Trust-all SSL chỉ dùng cho LAN (không phải clover.com hay stonephovaldosta.com)
+        if (conn is HttpsURLConnection && !urlStr.contains("clover.com") && !urlStr.contains("stonephovaldosta.com")) {
             conn.sslSocketFactory = trustAllFactory
             conn.hostnameVerifier  = trustAllHostname
         }
@@ -45,14 +41,34 @@ object CloverRepository {
         conn.connectTimeout = 10_000
         conn.readTimeout    = 15_000
         return try {
-            if (conn.responseCode !in 200..299)
-                error("HTTP ${conn.responseCode}: ${conn.responseMessage}")
+            if (conn.responseCode !in 200..299) error("HTTP ${conn.responseCode}: ${conn.responseMessage}")
             conn.inputStream.bufferedReader().readText()
         } finally {
             conn.disconnect()
         }
     }
 
+    // ── Chế độ PROXY: gọi qua stonephovaldosta.com/loyalteapp/backend ──────────
+    // Token ở đây là auth token của LoyalteApp (không phải Clover token)
+    suspend fun fetchOpenOrdersViaProxy(
+        proxyToken: String
+    ): Result<List<CloverOrder>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = "${CloverConfig.PROXY_URL}/api/clover/orders"
+            gson.fromJson(get(url, proxyToken), CloverOrdersResponse::class.java).elements
+        }
+    }
+
+    suspend fun fetchTablesViaProxy(
+        proxyToken: String
+    ): Result<List<CloverTable>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = "${CloverConfig.PROXY_URL}/api/clover/tables"
+            gson.fromJson(get(url, proxyToken), CloverTablesResponse::class.java).elements
+        }
+    }
+
+    // ── Chế độ DIRECT: gọi thẳng Clover API (cần OAuth token) ────────────────
     suspend fun fetchOpenOrders(
         baseUrl: String,
         merchantId: String,
@@ -61,7 +77,7 @@ object CloverRepository {
         runCatching {
             val url = "$baseUrl/v3/merchants/$merchantId/orders" +
                 "?filter=state%3Dopen&expand=lineItems%2ClineItems.item%2CorderType&limit=100"
-            gson.fromJson(get(url, token, baseUrl), CloverOrdersResponse::class.java).elements
+            gson.fromJson(get(url, token), CloverOrdersResponse::class.java).elements
         }
     }
 
@@ -72,7 +88,7 @@ object CloverRepository {
     ): Result<List<CloverTable>> = withContext(Dispatchers.IO) {
         runCatching {
             val url = "$baseUrl/v3/merchants/$merchantId/tables?limit=200"
-            gson.fromJson(get(url, token, baseUrl), CloverTablesResponse::class.java).elements
+            gson.fromJson(get(url, token), CloverTablesResponse::class.java).elements
         }
     }
 }

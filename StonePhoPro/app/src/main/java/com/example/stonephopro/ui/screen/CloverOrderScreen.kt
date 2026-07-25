@@ -96,8 +96,10 @@ fun CloverOrderScreen(onBack: () -> Unit) {
             if (oauthToken.isNotBlank()) accessToken = oauthToken
             baseUrl = "https://api.clover.com"
         }
-        if (merchantId.isBlank() || accessToken.isBlank()) {
-            errorMsg = "Vui lòng kết nối Clover hoặc nhập thủ công Merchant ID và Token."
+
+        val useProxy = CloverConfig.getMode(context) == CloverConfig.Mode.PROXY
+        if (!useProxy && (merchantId.isBlank() || accessToken.isBlank())) {
+            errorMsg = "Vui lòng kết nối Clover hoặc dùng chế độ Proxy."
             showConfig = true
             return
         }
@@ -106,9 +108,15 @@ fun CloverOrderScreen(onBack: () -> Unit) {
         errorMsg  = ""
         selectedOrder = null
         scope.launch {
-            // Lấy song song: bảng bàn + open orders
-            val ordersResult = CloverRepository.fetchOpenOrders(baseUrl, merchantId, accessToken)
-            val tablesResult = CloverRepository.fetchTables(baseUrl, merchantId, accessToken)
+            val ordersResult = if (useProxy)
+                CloverRepository.fetchOpenOrdersViaProxy(accessToken)
+            else
+                CloverRepository.fetchOpenOrders(baseUrl, merchantId, accessToken)
+
+            val tablesResult = if (useProxy)
+                CloverRepository.fetchTablesViaProxy(accessToken)
+            else
+                CloverRepository.fetchTables(baseUrl, merchantId, accessToken)
 
             ordersResult
                 .onSuccess  { openOrders = it }
@@ -212,6 +220,40 @@ fun CloverOrderScreen(onBack: () -> Unit) {
             AnimatedVisibility(visible = showConfig) {
                 Surface(shadowElevation = 4.dp) {
                     Column(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+
+                        // Chọn chế độ kết nối
+                        val currentMode = CloverConfig.getMode(context)
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button3D(
+                                text = "🌐 Qua Server (Khuyên dùng)",
+                                onClick = {
+                                    CloverConfig.saveProxy(context, accessToken)
+                                    showConfig = false
+                                    reload()
+                                },
+                                modifier = Modifier.weight(1f).height(44.dp),
+                                gradientColors = if (currentMode == CloverConfig.Mode.PROXY)
+                                    listOf(Color(0xFF2E7D32), Color(0xFF1B5E20))
+                                else listOf(Color(0xFF78909C), Color(0xFF546E7A)),
+                                fontSize = 12.sp
+                            )
+                            Button3D(
+                                text = "🔑 Clover Trực tiếp",
+                                onClick = { /* chỉ dùng form bên dưới */ },
+                                modifier = Modifier.weight(1f).height(44.dp),
+                                gradientColors = if (currentMode == CloverConfig.Mode.DIRECT)
+                                    listOf(Color(0xFF1565C0), Color(0xFF0D47A1))
+                                else listOf(Color(0xFF78909C), Color(0xFF546E7A)),
+                                fontSize = 12.sp
+                            )
+                        }
+                        Text(
+                            "🌐 Proxy: dùng server stonephovaldosta.com — không cần OAuth\n" +
+                            "🔑 Trực tiếp: gọi Clover API thẳng — cần bấm 'Kết nối Clover' bên trên",
+                            fontSize = 11.sp, color = Color.Gray
+                        )
+                        Divider()
+
                         OutlinedTextField(
                             value = baseUrl,
                             onValueChange = { baseUrl = it },
