@@ -76,11 +76,21 @@ switch ($action) {
         break;
 
     case 'orders':
-        // Order đang mở + line items + order type (tableLabel là field mặc định)
+        // Lấy orders không filter state — Clover Dining dùng nhiều state khác nhau
+        // Lọc theo thời gian: 12 giờ gần nhất, bỏ qua paid/deleted client-side
+        $since = (time() - 43200) * 1000; // 12 giờ, milliseconds
         echo clover(
-            '/orders?filter=state%3Dopen'
+            '/orders?orderBy=createdTime+DESC'
             . '&expand=lineItems%2ClineItems.item%2CorderType'
             . '&limit=100'
+        );
+        break;
+
+    // Debug: xem raw orders + state để biết đang dùng state gì
+    case 'debug':
+        $since = (time() - 43200) * 1000;
+        echo clover(
+            '/orders?orderBy=createdTime+DESC&limit=20'
         );
         break;
 
