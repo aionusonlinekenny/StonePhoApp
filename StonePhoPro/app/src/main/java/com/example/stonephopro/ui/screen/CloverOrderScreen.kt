@@ -8,16 +8,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,336 +26,273 @@ import com.example.stonephopro.utils.clover.CloverAuthManager
 import com.example.stonephopro.utils.clover.CloverConfig
 import com.example.stonephopro.utils.clover.CloverOrder
 import com.example.stonephopro.utils.clover.CloverRepository
-import com.example.stonephopro.utils.clover.CloverTable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
 private val COLOR_OCCUPIED = Color(0xFF1565C0)
-private val COLOR_EMPTY    = Color(0xFFEEEEEE)
+private val COLOR_EMPTY    = Color(0xFFE8EAF6)
+private val COLOR_SELECTED = Color(0xFF0D47A1)
+
+// ── Layout bàn khớp với Clover Dining trên thiết bị thực tế ──────────────────
+// Mỗi TableSlot có vị trí (row, col) trong lưới 5×5
+private data class TableSlot(val row: Int, val col: Int, val name: String, val seats: Int = 4)
+
+//  Col:  0     1     2     3     4
+private val DINING_ROOM_LAYOUT = listOf(
+    // Row 0
+    TableSlot(0, 0, "16"), TableSlot(0, 1, "12"), TableSlot(0, 2, "8"),                          TableSlot(0, 4, "1"),
+    // Row 1
+    TableSlot(1, 0, "17"), TableSlot(1, 1, "13"), TableSlot(1, 2, "9"),  TableSlot(1, 3, "5"),  TableSlot(1, 4, "2"),
+    // Row 2
+    TableSlot(2, 0, "18"), TableSlot(2, 1, "14"), TableSlot(2, 2, "10"), TableSlot(2, 3, "6"),  TableSlot(2, 4, "3"),
+    // Row 3
+                           TableSlot(3, 1, "15"), TableSlot(3, 2, "11"), TableSlot(3, 3, "7"),  TableSlot(3, 4, "4"),
+    // Row 4
+                                                                                                  TableSlot(4, 4, "OUTS"),
+)
+private const val GRID_ROWS = 5
+private const val GRID_COLS = 5
 
 @Composable
 fun CloverOrderScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
 
-    var isConnected  by remember { mutableStateOf(CloverAuthManager.isAuthenticated(context)) }
-    var showWebAuth  by remember { mutableStateOf(false) }
-    var showTableCountDialog by remember { mutableStateOf(false) }
-
-    var tables      by remember { mutableStateOf<List<CloverTable>>(emptyList()) }
-    var openOrders  by remember { mutableStateOf<List<CloverOrder>>(emptyList()) }
-    var isLoading   by remember { mutableStateOf(false) }
-    var errorMsg    by remember { mutableStateOf("") }
-    var hasLoaded   by remember { mutableStateOf(false) }
+    var isConnected   by remember { mutableStateOf(CloverAuthManager.isAuthenticated(context)) }
+    var showWebAuth   by remember { mutableStateOf(false) }
+    var openOrders    by remember { mutableStateOf<List<CloverOrder>>(emptyList()) }
+    var isLoading     by remember { mutableStateOf(false) }
+    var errorMsg      by remember { mutableStateOf("") }
     var selectedOrder by remember { mutableStateOf<CloverOrder?>(null) }
     var selectedTab   by remember { mutableStateOf(0) }
 
     val tableOrderMap by remember(openOrders) {
-        derivedStateOf { openOrders.associateBy { it.tableLabel ?: "" } }
+        derivedStateOf {
+            openOrders
+                .filter  { it.tableLabel?.isNotBlank() == true }
+                .associateBy { it.tableLabel!!.trim() }
+        }
     }
     val toGoOrders by remember(openOrders) {
         derivedStateOf {
             openOrders.filter { order ->
-                val label     = order.tableLabel?.trim() ?: ""
-                val typeLabel = order.orderType?.label?.lowercase() ?: ""
-                label.isEmpty() || typeLabel.contains("go") || typeLabel.contains("takeout")
+                val lbl  = order.tableLabel?.trim() ?: ""
+                val type = order.orderType?.label?.lowercase() ?: ""
+                lbl.isEmpty() || type.contains("go") || type.contains("takeout") || type.contains("pickup")
             }
         }
     }
 
     fun reload() {
-        if (!CloverAuthManager.isAuthenticated(context)) {
-            showWebAuth = true
-            return
-        }
+        if (!CloverAuthManager.isAuthenticated(context)) { showWebAuth = true; return }
         val token = CloverAuthManager.getToken(context)
         val mid   = CloverAuthManager.getMerchantId(context)
-        if (token.isBlank() || mid.isBlank()) {
-            showWebAuth = true
-            return
-        }
+        if (token.isBlank() || mid.isBlank()) { showWebAuth = true; return }
         isLoading = true
         errorMsg  = ""
-        selectedOrder = null
         scope.launch {
-            val ordersResult = CloverRepository.fetchOpenOrders(
-                CloverConfig.CLOVER_DIRECT_URL, mid, token
-            )
-            val tablesResult = CloverRepository.fetchTables(
-                CloverConfig.CLOVER_DIRECT_URL, mid, token
-            )
-
-            ordersResult
+            CloverRepository.fetchOpenOrders(CloverConfig.CLOVER_DIRECT_URL, mid, token)
                 .onSuccess { openOrders = it }
-                .onFailure { errorMsg = "Lỗi order: ${it.message}" }
-
-            tablesResult
-                .onSuccess { list ->
-                    if (list.isNotEmpty()) {
-                        tables = list.sortedBy { it.name.padStart(5, '0') }
-                    } else {
-                        val fromOrders = openOrders
-                            .mapNotNull { o -> o.tableLabel?.takeIf { l -> l.isNotBlank() } }
-                            .distinct().sorted()
-                            .map { lbl -> CloverTable(id = lbl, name = lbl) }
-                        if (fromOrders.isNotEmpty()) {
-                            tables = fromOrders
-                        } else {
-                            val count = CloverConfig.getManualTableCount(context)
-                            if (count > 0) {
-                                tables = (1..count).map { n ->
-                                    CloverTable(id = n.toString(), name = n.toString())
-                                }
-                            }
-                        }
-                    }
-                }
-                .onFailure { err ->
-                    val fromOrders = openOrders
-                        .mapNotNull { o -> o.tableLabel?.takeIf { l -> l.isNotBlank() } }
-                        .distinct().sorted()
-                        .map { lbl -> CloverTable(id = lbl, name = lbl) }
-                    if (fromOrders.isNotEmpty()) {
-                        tables = fromOrders
-                    } else {
-                        val count = CloverConfig.getManualTableCount(context)
-                        if (count > 0) {
-                            tables = (1..count).map { n ->
-                                CloverTable(id = n.toString(), name = n.toString())
-                            }
-                        } else if (errorMsg.isEmpty()) {
-                            errorMsg = "Không tải được bàn: ${err.message}"
-                        }
-                    }
-                }
-
-            hasLoaded = true
+                .onFailure { errorMsg   = "Lỗi: ${it.message}" }
             isLoading = false
         }
     }
 
-    // Tự load khi đã kết nối
-    LaunchedEffect(Unit) {
-        if (isConnected) reload()
+    // Load lần đầu + auto-refresh mỗi 30 giây khi màn hình mở
+    LaunchedEffect(isConnected) {
+        if (isConnected) {
+            reload()
+            while (true) {
+                delay(30_000)
+                if (!isLoading) reload()
+            }
+        }
     }
 
-    // Dialog cấu hình số bàn thủ công
-    if (showTableCountDialog) {
-        TableCountDialog(
-            currentCount = CloverConfig.getManualTableCount(context),
-            onConfirm = { count ->
-                CloverConfig.setManualTableCount(context, count)
-                showTableCountDialog = false
-                if (count > 0) {
-                    tables = (1..count).map { n ->
-                        CloverTable(id = n.toString(), name = n.toString())
-                    }
-                }
-            },
-            onDismiss = { showTableCountDialog = false }
-        )
-    }
-
-    // OAuth WebView
     if (showWebAuth) {
         CloverWebAuthDialog(
             onSuccess = { token, mid ->
-                showWebAuth  = false
+                showWebAuth = false
                 CloverAuthManager.saveAuth(context, token, mid)
                 isConnected = true
-                reload()
             },
             onDismiss = { showWebAuth = false }
         )
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize()) {
 
-            // ── Top bar ──────────────────────────────────────────────────────
+        // ── Top bar ──────────────────────────────────────────────────────────
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF1A237E))
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF1A237E))
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                Text("🖥️", fontSize = 20.sp)
+                Text("Clover Dining", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Box(
+                    modifier = Modifier
+                        .background(
+                            if (isConnected) Color(0xFF43A047) else Color(0xFFEF6C00),
+                            RoundedCornerShape(12.dp)
+                        )
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
-                    Text("🖥️", fontSize = 20.sp)
                     Text(
-                        "Clover Dining",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
+                        if (isConnected) "● Đã kết nối" else "● Chưa kết nối",
+                        color = Color.White, fontSize = 11.sp
                     )
-                    Box(
-                        modifier = Modifier
-                            .background(
-                                if (isConnected) Color(0xFF43A047) else Color(0xFFEF6C00),
-                                RoundedCornerShape(12.dp)
-                            )
-                            .padding(horizontal = 8.dp, vertical = 3.dp)
-                    ) {
-                        Text(
-                            if (isConnected) "● Đã kết nối" else "● Chưa kết nối",
-                            color = Color.White,
-                            fontSize = 11.sp
-                        )
-                    }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (!isConnected) {
-                        Button3D(
-                            text = "🔐 Kết nối Clover",
-                            onClick = { showWebAuth = true },
-                            gradientColors = listOf(Color(0xFFFF8F00), Color(0xFFE65100)),
-                            fontSize = 13.sp
-                        )
-                    } else {
-                        TextButton(onClick = {
-                            CloverAuthManager.logout(context)
-                            isConnected = false
-                            tables      = emptyList()
-                            openOrders  = emptyList()
-                            hasLoaded   = false
-                        }) {
-                            Text("Đổi tài khoản", color = Color(0xFFB0BEC5), fontSize = 12.sp)
-                        }
-                        IconButton(onClick = { if (!isLoading) reload() }) {
-                            Text(if (isLoading) "⏳" else "🔄", fontSize = 18.sp)
-                        }
-                    }
+                // Chỉ báo auto-refresh
+                if (isConnected) {
+                    Text("↻ 30s", color = Color(0xFF90CAF9), fontSize = 10.sp)
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!isConnected) {
                     Button3D(
-                        text = "✕ Đóng",
-                        onClick = onBack,
-                        gradientColors = listOf(Color(0xFF546E7A), Color(0xFF263238)),
+                        text = "🔐 Kết nối",
+                        onClick = { showWebAuth = true },
+                        gradientColors = listOf(Color(0xFFFF8F00), Color(0xFFE65100)),
                         fontSize = 13.sp
                     )
+                } else {
+                    TextButton(onClick = {
+                        CloverAuthManager.logout(context)
+                        isConnected = false
+                        openOrders  = emptyList()
+                    }) {
+                        Text("Đổi token", color = Color(0xFFB0BEC5), fontSize = 12.sp)
+                    }
+                    IconButton(onClick = { if (!isLoading) reload() }) {
+                        Text(if (isLoading) "⏳" else "🔄", fontSize = 18.sp)
+                    }
                 }
-            }
-
-            // Lỗi
-            if (errorMsg.isNotEmpty()) {
-                Text(
-                    text = errorMsg,
-                    color = Color(0xFFD32F2F),
-                    fontSize = 13.sp,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFFFFEBEE))
-                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                Button3D(
+                    text = "✕ Đóng",
+                    onClick = onBack,
+                    gradientColors = listOf(Color(0xFF546E7A), Color(0xFF263238)),
+                    fontSize = 13.sp
                 )
             }
+        }
 
-            // ── Body ─────────────────────────────────────────────────────────
-            if (!isConnected) {
-                // Màn hình chưa đăng nhập
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Text("🔌", fontSize = 48.sp)
-                        Text(
-                            "Kết nối với Clover POS\nđể xem bàn và order",
-                            fontSize = 18.sp,
-                            color = Color.Gray,
-                            textAlign = TextAlign.Center
-                        )
-                        Button3D(
-                            text = "🔐 Đăng nhập Clover",
-                            onClick = { showWebAuth = true },
-                            gradientColors = listOf(Color(0xFF1565C0), Color(0xFF0D47A1)),
-                            fontSize = 16.sp,
-                            modifier = Modifier.height(52.dp).widthIn(min = 220.dp)
-                        )
-                        Text(
-                            "Dùng tài khoản nhà hàng trên clover.com",
-                            fontSize = 12.sp,
-                            color = Color(0xFF9E9E9E)
-                        )
-                    }
-                }
-            } else if (isLoading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator()
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text("Đang tải dữ liệu từ Clover...")
-                    }
-                }
-            } else {
-                // Tabs
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    listOf("Main Dining Room", "TO GO").forEachIndexed { idx, label ->
-                        val active = selectedTab == idx
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .background(if (active) Color(0xFF1A237E) else Color(0xFFE8EAF6))
-                                .clickable { selectedTab = idx; selectedOrder = null }
-                                .padding(vertical = 12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                label,
-                                color = if (active) Color.White else Color(0xFF3949AB),
-                                fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
-                                fontSize = 14.sp
-                            )
-                        }
-                    }
-                }
+        // Lỗi
+        if (errorMsg.isNotEmpty()) {
+            Text(
+                text = errorMsg,
+                color = Color(0xFFD32F2F),
+                fontSize = 13.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFFFEBEE))
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+            )
+        }
 
-                Row(modifier = Modifier.fillMaxSize()) {
-                    val mapWeight = if (selectedOrder != null) 0.55f else 1f
+        // ── Body ─────────────────────────────────────────────────────────────
+        if (!isConnected) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text("🔌", fontSize = 48.sp)
+                    Text(
+                        "Kết nối với Clover POS\nđể xem sơ đồ bàn",
+                        fontSize = 18.sp, color = Color.Gray, textAlign = TextAlign.Center
+                    )
+                    Button3D(
+                        text = "🔐 Đăng nhập Clover",
+                        onClick = { showWebAuth = true },
+                        gradientColors = listOf(Color(0xFF1565C0), Color(0xFF0D47A1)),
+                        fontSize = 16.sp,
+                        modifier = Modifier.height(52.dp).widthIn(min = 220.dp)
+                    )
+                    Text(
+                        "clover.com → Setup → API Tokens → New Token",
+                        fontSize = 12.sp, color = Color(0xFF9E9E9E)
+                    )
+                }
+            }
+        } else if (isLoading && openOrders.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Đang tải order từ Clover...")
+                }
+            }
+        } else {
+            // Tabs
+            Row(modifier = Modifier.fillMaxWidth()) {
+                listOf("Main Dining Room", "TO GO").forEachIndexed { idx, label ->
+                    val active = selectedTab == idx
                     Box(
                         modifier = Modifier
-                            .fillMaxHeight()
-                            .weight(mapWeight)
-                            .padding(12.dp)
+                            .weight(1f)
+                            .background(if (active) Color(0xFF1A237E) else Color(0xFFE8EAF6))
+                            .clickable { selectedTab = idx; selectedOrder = null }
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        when (selectedTab) {
-                            0 -> DiningRoomGrid(
-                                tables = tables.filter { t ->
-                                    val lbl = t.name.lowercase()
-                                    !lbl.contains("go") && !lbl.contains("takeout")
-                                },
-                                tableOrderMap   = tableOrderMap,
-                                selectedOrder   = selectedOrder,
-                                hasLoaded       = hasLoaded,
-                                onTableClick    = { order ->
-                                    selectedOrder = if (selectedOrder?.id == order?.id) null else order
-                                },
-                                onConfigTables  = { showTableCountDialog = true }
-                            )
-                            else -> ToGoList(
-                                orders = toGoOrders,
-                                selectedOrder = selectedOrder,
-                                onOrderClick  = { order ->
-                                    selectedOrder = if (selectedOrder?.id == order.id) null else order
-                                }
-                            )
-                        }
+                        val badge = if (idx == 1 && toGoOrders.isNotEmpty()) " (${toGoOrders.size})" else ""
+                        Text(
+                            label + badge,
+                            color = if (active) Color.White else Color(0xFF3949AB),
+                            fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+                            fontSize = 14.sp
+                        )
                     }
+                }
+            }
 
-                    AnimatedVisibility(
-                        visible = selectedOrder != null,
-                        enter   = slideInHorizontally { it },
-                        exit    = slideOutHorizontally { it }
-                    ) {
-                        selectedOrder?.let { order ->
-                            OrderDetailPanel(
-                                order    = order,
-                                onClose  = { selectedOrder = null },
-                                modifier = Modifier.fillMaxHeight().weight(0.45f)
-                            )
-                        }
+            Row(modifier = Modifier.fillMaxSize()) {
+                val mapWeight = if (selectedOrder != null) 0.55f else 1f
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .weight(mapWeight)
+                        .padding(12.dp)
+                ) {
+                    when (selectedTab) {
+                        0 -> DiningFloorPlan(
+                            tableOrderMap = tableOrderMap,
+                            selectedOrder = selectedOrder,
+                            onTableClick  = { order ->
+                                selectedOrder = if (selectedOrder?.id == order?.id) null else order
+                            }
+                        )
+                        else -> ToGoList(
+                            orders = toGoOrders,
+                            selectedOrder = selectedOrder,
+                            onOrderClick  = { order ->
+                                selectedOrder = if (selectedOrder?.id == order.id) null else order
+                            }
+                        )
+                    }
+                }
+
+                AnimatedVisibility(
+                    visible = selectedOrder != null,
+                    enter   = slideInHorizontally { it },
+                    exit    = slideOutHorizontally { it }
+                ) {
+                    selectedOrder?.let { order ->
+                        OrderDetailPanel(
+                            order    = order,
+                            onClose  = { selectedOrder = null },
+                            modifier = Modifier.fillMaxHeight().weight(0.45f)
+                        )
                     }
                 }
             }
@@ -369,58 +300,48 @@ fun CloverOrderScreen(onBack: () -> Unit) {
     }
 }
 
-// ── Dining room grid ──────────────────────────────────────────────────────────
+// ── Sơ đồ phòng ăn — khớp với layout Clover Dining thực tế ──────────────────
 @Composable
-private fun DiningRoomGrid(
-    tables: List<CloverTable>,
+private fun DiningFloorPlan(
     tableOrderMap: Map<String, CloverOrder>,
     selectedOrder: CloverOrder?,
-    hasLoaded: Boolean,
-    onTableClick: (CloverOrder?) -> Unit,
-    onConfigTables: () -> Unit = {}
+    onTableClick: (CloverOrder?) -> Unit
 ) {
-    if (tables.isEmpty()) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            if (!hasLoaded) {
-                Text("Đang chờ dữ liệu...", color = Color.Gray)
-            } else {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+    val slotMap = remember { DINING_ROOM_LAYOUT.associateBy { Pair(it.row, it.col) } }
+
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val gap      = 8.dp
+        val cellSize = minOf(
+            (maxWidth  - gap * (GRID_COLS - 1)) / GRID_COLS,
+            (maxHeight - gap * (GRID_ROWS - 1)) / GRID_ROWS
+        )
+
+        Column(
+            verticalArrangement = Arrangement.spacedBy(gap)
+        ) {
+            for (row in 0 until GRID_ROWS) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(gap)
                 ) {
-                    Text(
-                        "Clover không trả về danh sách bàn.\nNhà hàng có bao nhiêu bàn?",
-                        textAlign = TextAlign.Center,
-                        color = Color.Gray
-                    )
-                    Button(
-                        onClick = onConfigTables,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
-                    ) {
-                        Text("⚙️ Cấu hình số bàn")
+                    for (col in 0 until GRID_COLS) {
+                        val slot  = slotMap[Pair(row, col)]
+                        val order = slot?.let { tableOrderMap[it.name] }
+                        if (slot != null) {
+                            TableCell(
+                                label      = slot.name,
+                                seats      = slot.seats,
+                                isOccupied = order != null,
+                                isSelected = selectedOrder?.id == order?.id,
+                                total      = order?.total,
+                                onClick    = { onTableClick(order) },
+                                modifier   = Modifier.size(cellSize)
+                            )
+                        } else {
+                            Spacer(modifier = Modifier.size(cellSize))
+                        }
                     }
                 }
             }
-        }
-        return
-    }
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 100.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement   = Arrangement.spacedBy(10.dp)
-    ) {
-        items(tables, key = { it.id }) { table ->
-            val order      = tableOrderMap[table.name]
-            val isOccupied = order != null
-            val isSelected = selectedOrder?.id == order?.id
-            TableCell(
-                label      = table.name,
-                seats      = table.maxSeats,
-                isOccupied = isOccupied,
-                isSelected = isSelected,
-                total      = order?.total,
-                onClick    = { onTableClick(order) }
-            )
         }
     }
 }
@@ -433,40 +354,47 @@ private fun TableCell(
     isOccupied: Boolean,
     isSelected: Boolean,
     total: Long?,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val bgColor = when {
-        isSelected -> Color(0xFF0D47A1)
+        isSelected -> COLOR_SELECTED
         isOccupied -> COLOR_OCCUPIED
         else       -> COLOR_EMPTY
     }
-    val textColor = if (isOccupied || isSelected) Color.White else Color(0xFF424242)
+    val textColor = if (isOccupied || isSelected) Color.White else Color(0xFF1A237E)
 
     Box(
-        modifier = Modifier
-            .aspectRatio(1f)
+        modifier = modifier
             .clip(RoundedCornerShape(10.dp))
             .background(bgColor)
             .then(
                 if (isSelected) Modifier.border(2.dp, Color(0xFF64B5F6), RoundedCornerShape(10.dp))
                 else Modifier
             )
-            .clickable(enabled = isOccupied, onClick = onClick),
+            .clickable(enabled = isOccupied || true, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(label, color = textColor, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            if (seats > 0 && !isOccupied) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("🪑", fontSize = 10.sp)
-                    Text(" $seats", fontSize = 11.sp, color = textColor.copy(alpha = 0.7f))
-                }
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            // Chair icon
+            Text("🪑", fontSize = if (label.length <= 2) 14.sp else 10.sp)
+            Text(
+                label,
+                color = textColor,
+                fontWeight = FontWeight.Bold,
+                fontSize = if (label.length <= 2) 20.sp else 14.sp
+            )
+            if (!isOccupied) {
+                Text(seats.toString(), fontSize = 11.sp, color = textColor.copy(alpha = 0.6f))
             }
             if (isOccupied && total != null) {
                 Text(
                     formatCents(total),
                     color = textColor.copy(alpha = 0.9f),
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Medium
                 )
             }
@@ -552,9 +480,7 @@ private fun OrderDetailPanel(
                         text = if (order.tableLabel?.isNotBlank() == true)
                             "Bàn ${order.tableLabel}"
                         else order.title.ifEmpty { "Order #${order.id.takeLast(6)}" },
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
+                        color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp
                     )
                     if (timeStr.isNotEmpty())
                         Text(timeStr, color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp)
@@ -566,9 +492,7 @@ private fun OrderDetailPanel(
 
             // Items
             LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 12.dp),
+                modifier             = Modifier.weight(1f).padding(horizontal = 12.dp),
                 contentPadding       = PaddingValues(vertical = 8.dp),
                 verticalArrangement  = Arrangement.spacedBy(4.dp)
             ) {
@@ -589,32 +513,23 @@ private fun OrderDetailPanel(
                             ?: lineItem.name.takeIf { it.isNotBlank() }
                             ?: "(Không tên)"
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 5.dp),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(displayName, modifier = Modifier.weight(1f), fontSize = 14.sp)
                             Text(
-                                text = if (lineItem.quantity % 1.0 == 0.0)
-                                    lineItem.quantity.toInt().toString()
+                                if (lineItem.quantity % 1.0 == 0.0) lineItem.quantity.toInt().toString()
                                 else "%.1f".format(lineItem.quantity),
-                                modifier  = Modifier.width(34.dp),
-                                fontSize  = 14.sp,
-                                textAlign = TextAlign.Center
+                                modifier = Modifier.width(34.dp), fontSize = 14.sp, textAlign = TextAlign.Center
                             )
                             Text(
                                 formatCents(lineItem.price),
-                                modifier  = Modifier.width(72.dp),
-                                fontSize  = 14.sp,
-                                textAlign = TextAlign.End
+                                modifier = Modifier.width(72.dp), fontSize = 14.sp, textAlign = TextAlign.End
                             )
                             Text(
                                 formatCents(lineItem.lineTotal),
-                                modifier   = Modifier.width(72.dp),
-                                fontSize   = 14.sp,
-                                textAlign  = TextAlign.End,
-                                fontWeight = FontWeight.Medium
+                                modifier = Modifier.width(72.dp), fontSize = 14.sp,
+                                textAlign = TextAlign.End, fontWeight = FontWeight.Medium
                             )
                         }
                         Divider(color = Color(0xFFEEEEEE))
@@ -635,62 +550,8 @@ private fun OrderDetailPanel(
                 Text("TỔNG CỘNG", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Text(
                     formatCents(order.total),
-                    fontWeight = FontWeight.Bold,
-                    fontSize   = 20.sp,
-                    color      = Color(0xFF1565C0)
+                    fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF1565C0)
                 )
-            }
-        }
-    }
-}
-
-// ── Dialog cấu hình số bàn ────────────────────────────────────────────────────
-@Composable
-private fun TableCountDialog(
-    currentCount: Int,
-    onConfirm: (Int) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var input by remember { mutableStateOf(if (currentCount > 0) currentCount.toString() else "") }
-    val count = input.toIntOrNull() ?: 0
-
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text("⚙️ Cấu hình số bàn", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                Text(
-                    "Nhập số bàn nhà hàng (vd: 18).\nApp sẽ hiển thị Bàn 1 đến Bàn N.",
-                    fontSize = 13.sp,
-                    color = Color.Gray
-                )
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = { v -> input = v.filter { it.isDigit() }.take(3) },
-                    label = { Text("Số bàn") },
-                    placeholder = { Text("Vd: 18") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
-                        Text("Huỷ")
-                    }
-                    Button(
-                        onClick = { if (count > 0) onConfirm(count) },
-                        enabled = count in 1..200,
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
-                    ) {
-                        Text("✅ Lưu", color = Color.White)
-                    }
-                }
             }
         }
     }
