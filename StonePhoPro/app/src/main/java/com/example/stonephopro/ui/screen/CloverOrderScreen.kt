@@ -35,33 +35,33 @@ private val COLOR_OCCUPIED = Color(0xFF1565C0)   // xanh đậm = có order
 private val COLOR_EMPTY    = Color(0xFFD0D0D0)   // xám = trống
 private val COLOR_SELECTED = Color(0xFF0D47A1)   // xanh đậm hơn = đang chọn
 
-// ── Layout bàn ĐÚNG theo Clover Dining thiết bị thực tế ──────────────────────
-// Grid 5 hàng × 5 cột, (row=0 = hàng trên cùng, col=0 = cột trái nhất)
+// ── Layout bàn theo sơ đồ thực tế nhà hàng ────────────────────────────────────
 //
-//  Col:    0      1      2      3      4
-//  Row 0: OUTS   .      .      .      .
-//  Row 1:  4     7     11     15      .
-//  Row 2:  3     6     10     14     18
-//  Row 3:  2     5      9     13     17
-//  Row 4:  1     .      8     12     16
+//  Col:    0     1     2     3     4     5
+//  Row 0:  .     .     .     .     .     .      ← hàng trống (lối vào/khoảng trống)
+//  Row 1:  1     2     3     4     .   Outside  ← bàn 1-4 + Outside cùng hàng
+//  Row 2:  .     5     6     7     .     .      ← bàn 5-7, lùi 1 ô
+//  Row 3:  8     9    10    11     .     .      ← bàn 8-11
+//  Row 4: 12    13    14    15     .     .      ← bàn 12-15
+//  Row 5: 16    17    18    .      .     .      ← bàn 16-18
 //
 private data class TableSlot(val row: Int, val col: Int, val name: String, val seats: Int = 4)
 
 private val DINING_ROOM_LAYOUT = listOf(
-    // Cột 0: OUTS + Bàn 1-4
-    TableSlot(0, 0, "OUTS"),
-    TableSlot(1, 0, "4"),  TableSlot(2, 0, "3"),  TableSlot(3, 0, "2"),  TableSlot(4, 0, "1"),
-    // Cột 1: Bàn 5-7 (chỉ 3 bàn)
-    TableSlot(1, 1, "7"),  TableSlot(2, 1, "6"),  TableSlot(3, 1, "5"),
-    // Cột 2: Bàn 8-11
-    TableSlot(1, 2, "11"), TableSlot(2, 2, "10"), TableSlot(3, 2, "9"),  TableSlot(4, 2, "8"),
-    // Cột 3: Bàn 12-15
-    TableSlot(1, 3, "15"), TableSlot(2, 3, "14"), TableSlot(3, 3, "13"), TableSlot(4, 3, "12"),
-    // Cột 4: Bàn 16-18 (chỉ 3 bàn, không có hàng 0 và 1)
-    TableSlot(2, 4, "18"), TableSlot(3, 4, "17"), TableSlot(4, 4, "16"),
+    // Row 1: Bàn 1-4 + Outside
+    TableSlot(1, 0, "1"),  TableSlot(1, 1, "2"),  TableSlot(1, 2, "3"),  TableSlot(1, 3, "4"),
+    TableSlot(1, 5, "OUTS"),
+    // Row 2: Bàn 5-7 (lùi 1 ô)
+    TableSlot(2, 1, "5"),  TableSlot(2, 2, "6"),  TableSlot(2, 3, "7"),
+    // Row 3: Bàn 8-11
+    TableSlot(3, 0, "8"),  TableSlot(3, 1, "9"),  TableSlot(3, 2, "10"), TableSlot(3, 3, "11"),
+    // Row 4: Bàn 12-15
+    TableSlot(4, 0, "12"), TableSlot(4, 1, "13"), TableSlot(4, 2, "14"), TableSlot(4, 3, "15"),
+    // Row 5: Bàn 16-18
+    TableSlot(5, 0, "16"), TableSlot(5, 1, "17"), TableSlot(5, 2, "18"),
 )
-private const val GRID_ROWS = 5
-private const val GRID_COLS = 5
+private const val GRID_ROWS = 6
+private const val GRID_COLS = 6
 
 @Composable
 fun CloverOrderScreen(onBack: () -> Unit) {
