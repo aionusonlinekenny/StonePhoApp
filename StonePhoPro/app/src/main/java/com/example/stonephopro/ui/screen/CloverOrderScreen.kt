@@ -74,16 +74,16 @@ fun CloverOrderScreen(onBack: () -> Unit) {
     val tableOrderMap by remember(openOrders) {
         derivedStateOf {
             openOrders
-                .filter  { it.tableLabel?.isNotBlank() == true }
-                .associateBy { it.tableLabel!!.trim() }
+                .filter  { it.title.isNotBlank() }
+                .associateBy { it.title.trim() }
         }
     }
     val toGoOrders by remember(openOrders) {
         derivedStateOf {
             openOrders.filter { order ->
-                val lbl  = order.tableLabel?.trim() ?: ""
-                val type = order.orderType?.label?.lowercase() ?: ""
-                lbl.isEmpty() || type.contains("go") || type.contains("takeout") || type.contains("pickup")
+                val title = order.title.trim()
+                val type  = order.orderType?.label?.lowercase() ?: ""
+                title.isEmpty() || type.contains("go") || type.contains("takeout") || type.contains("pickup")
             }
         }
     }
@@ -431,9 +431,9 @@ private fun OrderDetailPanel(
             ) {
                 Column {
                     Text(
-                        text = if (order.tableLabel?.isNotBlank() == true)
-                            "Bàn ${order.tableLabel}"
-                        else order.title.ifEmpty { "Order #${order.id.takeLast(6)}" },
+                        text = if (order.title.isNotBlank())
+                            "Bàn ${order.title}"
+                        else "Order #${order.id.takeLast(6)}",
                         color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp
                     )
                     if (timeStr.isNotEmpty())
