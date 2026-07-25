@@ -113,6 +113,15 @@ fun CloverWebAuthDialog(
 
                                     override fun onPageFinished(view: WebView, url: String) {
                                         isLoading = false
+                                        // Token nằm trong fragment (#) — WebView thường bỏ fragment
+                                        // khi pass vào shouldOverride/onPageStarted.
+                                        // Dùng JS để đọc window.location.href với full fragment.
+                                        if (url.contains("stonepho.app") || url.contains("clover/callback")) {
+                                            view.evaluateJavascript("window.location.href") { href ->
+                                                val fullUrl = href?.trim('"')?.replace("\\u0026", "&") ?: return@evaluateJavascript
+                                                handleCallbackUrl(fullUrl) { view.stopLoading() }
+                                            }
+                                        }
                                     }
                                 }
                                 loadUrl(authUrl)
