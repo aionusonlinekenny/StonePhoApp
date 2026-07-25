@@ -41,7 +41,7 @@ object CloverRepository {
     ): Result<List<CloverOrder>> = withContext(Dispatchers.IO) {
         try {
             val url = "$baseUrl/v3/merchants/$merchantId/orders" +
-                "?filter=state%3Dopen&expand=lineItems%2ClineItems.item&limit=50"
+                "?filter=state%3Dopen&expand=lineItems%2ClineItems.item%2CorderType&limit=100"
             val response = get(url, token, baseUrl)
             val parsed = gson.fromJson(response, CloverOrdersResponse::class.java)
             Result.success(parsed.elements)
@@ -50,17 +50,17 @@ object CloverRepository {
         }
     }
 
-    suspend fun fetchOrderDetail(
+    // Lấy danh sách bàn từ Clover table service
+    suspend fun fetchTables(
         baseUrl: String,
         merchantId: String,
-        orderId: String,
         token: String
-    ): Result<CloverOrder> = withContext(Dispatchers.IO) {
+    ): Result<List<CloverTable>> = withContext(Dispatchers.IO) {
         try {
-            val url = "$baseUrl/v3/merchants/$merchantId/orders/$orderId" +
-                "?expand=lineItems%2ClineItems.item"
+            val url = "$baseUrl/v3/merchants/$merchantId/tables?limit=200"
             val response = get(url, token, baseUrl)
-            Result.success(gson.fromJson(response, CloverOrder::class.java))
+            val parsed = gson.fromJson(response, CloverTablesResponse::class.java)
+            Result.success(parsed.elements)
         } catch (e: Exception) {
             Result.failure(e)
         }
