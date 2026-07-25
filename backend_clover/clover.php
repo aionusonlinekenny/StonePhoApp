@@ -10,11 +10,28 @@ header('Content-Type: application/json');
 
 // ── Xác thực StonePhoApp secret key ──────────────────────────────────────────
 define('STONEPHO_API_KEY', 'StonePhoClover@2024');
-$authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
-$sentKey    = trim(str_replace('Bearer ', '', $authHeader));
+
+// Apache đôi khi strip Authorization header — thử nhiều cách
+function get_auth_key(): string {
+    // Cách 1: $_SERVER trực tiếp
+    $h = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+    // Cách 2: REDIRECT_ prefix (khi dùng mod_rewrite)
+    if (!$h) $h = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+    // Cách 3: apache_request_headers() nếu có
+    if (!$h && function_exists('apache_request_headers')) {
+        $hdrs = apache_request_headers();
+        $h = $hdrs['Authorization'] ?? $hdrs['authorization'] ?? '';
+    }
+    return trim(str_replace('Bearer ', '', $h));
+}
+
+$sentKey = get_auth_key();
+// Cũng cho phép truyền qua query param ?key=... để test từ browser
+if (!$sentKey) $sentKey = $_GET['key'] ?? '';
+
 if ($sentKey !== STONEPHO_API_KEY) {
     http_response_code(401);
-    exit(json_encode(['error' => 'Unauthorized']));
+    exit(json_encode(['error' => 'Unauthorized', 'hint' => 'Send: Authorization: Bearer ' . STONEPHO_API_KEY]));
 }
 
 // ── Clover credentials (fallback hardcoded nếu config.php không define) ──────

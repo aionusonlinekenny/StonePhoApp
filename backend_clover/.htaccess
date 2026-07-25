@@ -1,0 +1,4 @@
+# Bắt buộc Apache truyền Authorization header vào PHP
+RewriteEngine On
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
