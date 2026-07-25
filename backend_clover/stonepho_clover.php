@@ -60,25 +60,44 @@ function clover(string $path): string {
     return $body;
 }
 
+// ── Helper: raw Clover call không check HTTP code (để xem lỗi) ───────────────
+function clover_raw(string $path): array {
+    $ch = curl_init('https://api.clover.com' . $path);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . TOKEN, 'Accept: application/json'],
+        CURLOPT_TIMEOUT        => 15,
+    ]);
+    $body = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err  = curl_error($ch);
+    curl_close($ch);
+    return ['code' => $code, 'body' => $body, 'err' => $err];
+}
+
 // ── Action routing (?action=orders / ping / tables) ───────────────────────────
 $action = $_GET['action'] ?? 'orders';
 
 switch ($action) {
 
     case 'ping':
+        // Ping Clover merchant endpoint để xác nhận token hợp lệ
+        $r = clover_raw('/v3/merchants/' . MID);
+        $merchant = json_decode($r['body'], true);
         echo json_encode([
-            'ok'      => true,
-            'server'  => 'stonepho_clover.php',
-            'mid'     => MID,
-            'token'   => '...' . substr(TOKEN, -6),
-            'time'    => date('Y-m-d H:i:s T'),
+            'ok'        => true,
+            'server'    => 'stonepho_clover.php',
+            'mid'       => MID,
+            'token'     => '...' . substr(TOKEN, -6),
+            'time'      => date('Y-m-d H:i:s T'),
+            'clover_http' => $r['code'],
+            'merchant_name' => $merchant['name'] ?? null,
+            'clover_err'  => $r['err'] ?: null,
         ]);
         break;
 
     case 'orders':
         // Lấy orders không filter state — Clover Dining dùng nhiều state khác nhau
-        // Lọc theo thời gian: 12 giờ gần nhất, bỏ qua paid/deleted client-side
-        $since = (time() - 43200) * 1000; // 12 giờ, milliseconds
         echo clover(
             '/orders?orderBy=createdTime+DESC'
             . '&expand=lineItems%2ClineItems.item%2CorderType'
@@ -86,12 +105,15 @@ switch ($action) {
         );
         break;
 
-    // Debug: xem raw orders + state để biết đang dùng state gì
+    // Debug: xem raw orders để biết state value + tableLabel field
     case 'debug':
-        $since = (time() - 43200) * 1000;
-        echo clover(
-            '/orders?orderBy=createdTime+DESC&limit=20'
-        );
+        echo clover('/orders?orderBy=createdTime+DESC&limit=20');
+        break;
+
+    // Thử endpoint khác: atomic pay + atomic orders (Clover Dining dùng system riêng)
+    case 'atomic':
+        $r = clover_raw('/v3/merchants/' . MID . '/atomic_order/orders?limit=20');
+        echo $r['body'] ?: json_encode(['error' => $r['err'], 'code' => $r['code']]);
         break;
 
     case 'tables':
