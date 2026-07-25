@@ -19,14 +19,27 @@ object CloverAuthManager {
         "&response_type=token" +
         "&redirect_uri=${Uri.encode(REDIRECT_URI)}"
 
-    // Không cần exchange code — token nằm thẳng trong URL callback
-    // URL dạng: https://stonepho.app/clover/callback?merchant_id=XXX&token=YYY&client_id=ZZZ
+    // Token có thể nằm trong query param HOẶC URL fragment (#)
+    // Dạng query:    https://stonepho.app/clover/callback?merchant_id=XXX&token=YYY
+    // Dạng fragment: https://stonepho.app/clover/callback#access_token=YYY&merchant_id=XXX
     fun parseTokenFromRedirect(url: String): Pair<String, String>? {
         if (!url.startsWith(REDIRECT_URI)) return null
         val uri = Uri.parse(url)
-        val token      = uri.getQueryParameter("token")      ?: uri.getQueryParameter("access_token") ?: return null
-        val merchantId = uri.getQueryParameter("merchant_id") ?: ""
-        return Pair(token, merchantId)
+
+        // Thử query params
+        var token      = uri.getQueryParameter("token") ?: uri.getQueryParameter("access_token")
+        var merchantId = uri.getQueryParameter("merchant_id") ?: ""
+
+        // Thử URL fragment nếu chưa tìm thấy token
+        val fragment = uri.fragment
+        if (token == null && !fragment.isNullOrBlank()) {
+            val fragUri = Uri.parse("?$fragment")
+            token      = fragUri.getQueryParameter("token") ?: fragUri.getQueryParameter("access_token")
+            if (merchantId.isEmpty())
+                merchantId = fragUri.getQueryParameter("merchant_id") ?: ""
+        }
+
+        return if (token != null) Pair(token, merchantId) else null
     }
 
     private const val PREFS = "clover_auth"
