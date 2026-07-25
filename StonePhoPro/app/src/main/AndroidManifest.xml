@@ -39,6 +39,24 @@
             android:name=".MainActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
+
+        <!-- Bắt OAuth callback từ Clover: stonepho://clover/oauth -->
+        <activity
+            android:name=".CloverOAuthActivity"
+            android:exported="true"
+            android:screenOrientation="landscape"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.StonePhoPro">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="stonepho"
+                    android:host="clover"
+                    android:pathPrefix="/oauth" />
+            </intent-filter>
+        </activity>
     </application>
 
 </manifest>

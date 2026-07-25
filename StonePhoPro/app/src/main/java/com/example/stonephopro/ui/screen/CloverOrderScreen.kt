@@ -28,7 +28,10 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Intent
+import android.net.Uri
 import com.example.stonephopro.components.Button3D
+import com.example.stonephopro.utils.clover.CloverAuthManager
 import com.example.stonephopro.utils.clover.CloverConfig
 import com.example.stonephopro.utils.clover.CloverOrder
 import com.example.stonephopro.utils.clover.CloverRepository
@@ -46,11 +49,15 @@ fun CloverOrderScreen(onBack: () -> Unit) {
     val context   = LocalContext.current
     val scope     = rememberCoroutineScope()
 
+    // Kiểm tra xem đã OAuth chưa
+    var isAuthenticated by remember { mutableStateOf(CloverAuthManager.isAuthenticated(context)) }
+
     val (savedUrl, savedMid, savedToken) = remember { CloverConfig.load(context) }
     var baseUrl     by remember { mutableStateOf(savedUrl) }
     var merchantId  by remember { mutableStateOf(savedMid) }
     var accessToken by remember { mutableStateOf(savedToken) }
-    var showConfig  by remember { mutableStateOf(savedMid.isEmpty() || savedToken.isEmpty()) }
+    // Chỉ mở config thủ công nếu chưa OAuth và cũng chưa nhập tay
+    var showConfig  by remember { mutableStateOf(!isAuthenticated && (savedMid.isEmpty() || savedToken.isEmpty())) }
     var showToken   by remember { mutableStateOf(false) }
 
     var tables      by remember { mutableStateOf<List<CloverTable>>(emptyList()) }
@@ -81,8 +88,17 @@ fun CloverOrderScreen(onBack: () -> Unit) {
     }
 
     fun reload() {
+        // Ưu tiên token OAuth nếu đã kết nối
+        if (CloverAuthManager.isAuthenticated(context)) {
+            isAuthenticated = true
+            val oauthMid   = CloverAuthManager.getMerchantId(context)
+            val oauthToken = CloverAuthManager.getToken(context)
+            if (oauthMid.isNotBlank())   merchantId  = oauthMid
+            if (oauthToken.isNotBlank()) accessToken = oauthToken
+            baseUrl = "https://api.clover.com"
+        }
         if (merchantId.isBlank() || accessToken.isBlank()) {
-            errorMsg = "Vui lòng nhập Merchant ID và Access Token."
+            errorMsg = "Vui lòng kết nối Clover hoặc nhập thủ công Merchant ID và Token."
             showConfig = true
             return
         }
@@ -130,8 +146,46 @@ fun CloverOrderScreen(onBack: () -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("🖥️", fontSize = 20.sp)
                     Text("Clover Dining", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    // Badge trạng thái kết nối
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                if (isAuthenticated) Color(0xFF43A047) else Color(0xFFEF6C00),
+                                RoundedCornerShape(12.dp)
+                            )
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text = if (isAuthenticated) "● Đã kết nối" else "● Chưa kết nối",
+                            color = Color.White,
+                            fontSize = 11.sp
+                        )
+                    }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Nút OAuth — hiển thị khi chưa kết nối
+                    if (!isAuthenticated) {
+                        Button3D(
+                            text = "🔐 Kết nối Clover",
+                            onClick = {
+                                val authUrl = CloverAuthManager.buildAuthUrl()
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse(authUrl))
+                                )
+                            },
+                            gradientColors = listOf(Color(0xFFFF8F00), Color(0xFFE65100)),
+                            fontSize = 13.sp
+                        )
+                    } else {
+                        TextButton(onClick = {
+                            CloverAuthManager.logout(context)
+                            isAuthenticated = false
+                            merchantId = ""
+                            accessToken = ""
+                        }) {
+                            Text("Đăng xuất", color = Color(0xFFB0BEC5), fontSize = 12.sp)
+                        }
+                    }
                     IconButton(onClick = { showConfig = !showConfig }) {
                         Text("⚙️", fontSize = 18.sp)
                     }
