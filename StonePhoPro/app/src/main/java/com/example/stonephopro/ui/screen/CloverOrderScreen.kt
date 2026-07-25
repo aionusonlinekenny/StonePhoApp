@@ -78,6 +78,7 @@ fun CloverOrderScreen(onBack: () -> Unit) {
     var openOrders  by remember { mutableStateOf<List<CloverOrder>>(emptyList()) }
     var isLoading   by remember { mutableStateOf(false) }
     var errorMsg    by remember { mutableStateOf("") }
+    var hasLoaded   by remember { mutableStateOf(false) }
 
     // Bàn/order đang được chọn để xem chi tiết
     var selectedOrder by remember { mutableStateOf<CloverOrder?>(null) }
@@ -139,17 +140,31 @@ fun CloverOrderScreen(onBack: () -> Unit) {
                 .onFailure  { errorMsg = "Lỗi order: ${it.message}" }
 
             tablesResult
-                .onSuccess  { if (it.isNotEmpty()) tables = it.sortedBy { t -> t.name.padStart(5, '0') } }
-                // Nếu không có table service → tự build từ tableLabel của orders
-                .onFailure  {
+                .onSuccess  { list ->
+                    if (list.isNotEmpty()) {
+                        tables = list.sortedBy { it.name.padStart(5, '0') }
+                    } else {
+                        // Tables API trả về rỗng → tự build từ tableLabel của orders
+                        val fromOrders = openOrders
+                            .mapNotNull { o -> o.tableLabel?.takeIf { l -> l.isNotBlank() } }
+                            .distinct().sorted()
+                            .map { lbl -> CloverTable(id = lbl, name = lbl) }
+                        if (fromOrders.isNotEmpty()) tables = fromOrders
+                        else errorMsg = (if (errorMsg.isNotEmpty()) "$errorMsg\n" else "") +
+                            "Clover API không trả về danh sách bàn. Kiểm tra lại kết nối."
+                    }
+                }
+                .onFailure  { err ->
                     val fromOrders = openOrders
                         .mapNotNull { o -> o.tableLabel?.takeIf { l -> l.isNotBlank() } }
-                        .distinct()
-                        .sorted()
+                        .distinct().sorted()
                         .map { lbl -> CloverTable(id = lbl, name = lbl) }
                     if (fromOrders.isNotEmpty()) tables = fromOrders
+                    else errorMsg = (if (errorMsg.isNotEmpty()) "$errorMsg\n" else "") +
+                        "Lỗi tải bàn: ${err.message}"
                 }
 
+            hasLoaded = true
             isLoading = false
         }
     }
@@ -379,7 +394,8 @@ fun CloverOrderScreen(onBack: () -> Unit) {
                         Text("Đang tải dữ liệu từ Clover...")
                     }
                 }
-            } else if (tables.isEmpty() && openOrders.isEmpty()) {
+            } else if (!hasLoaded) {
+                // Chưa load lần nào — chỉ show khi lần đầu mở màn hình
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("🔌", fontSize = 40.sp)
@@ -445,9 +461,16 @@ private fun DiningRoomGrid(
     onTableClick: (CloverOrder?) -> Unit
 ) {
     if (tables.isEmpty()) {
-        // Không có bàn từ API → hiển thị từ open orders
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Không tìm thấy bàn.\nVui lòng kiểm tra lại kết nối.", textAlign = TextAlign.Center, color = Color.Gray)
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("🪑", fontSize = 36.sp)
+                Text("Clover chưa trả về danh sách bàn", fontSize = 15.sp, color = Color.Gray, textAlign = TextAlign.Center)
+                Text(
+                    "Kiểm tra:\n• File clover.php đã upload lên server chưa?\n• Merchant ID: 04VMDMMGF5K81",
+                    fontSize = 12.sp, color = Color(0xFF9E9E9E), textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 24.dp)
+                )
+            }
         }
         return
     }
