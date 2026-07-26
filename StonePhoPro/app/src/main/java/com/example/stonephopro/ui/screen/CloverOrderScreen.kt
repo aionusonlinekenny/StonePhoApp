@@ -95,11 +95,18 @@ fun CloverOrderScreen(onBack: () -> Unit) {
             // Gọi backend proxy — không cần token Clover, backend tự authenticate
             CloverRepository.fetchOpenOrdersViaProxy(CloverConfig.PROXY_SECRET)
                 .onSuccess { orders ->
-                    // atomic_order endpoint chỉ trả orders đang thực sự mở → không cần filter phức tạp
-                    // Vẫn loại deleted/closed phòng trường hợp fallback về REST
-                    openOrders = orders.filter { o ->
-                        o.state.lowercase() !in setOf("deleted", "closed")
-                    }
+                    // Clover Dining REST không cập nhật paymentState/state sau khi thanh toán
+                    // → dùng cửa sổ 8 giờ gần nhất để loại trừ orders cũ đã thanh toán
+                    // → dedup theo title (mỗi bàn chỉ giữ order mới nhất)
+                    val eightHoursAgo = System.currentTimeMillis() - (8L * 60 * 60 * 1000)
+                    openOrders = orders
+                        .filter { o ->
+                            o.createdTime >= eightHoursAgo &&
+                            o.state.lowercase() !in setOf("deleted", "closed")
+                        }
+                        .groupBy { it.title.trim() }
+                        .mapValues { (_, list) -> list.maxByOrNull { it.createdTime }!! }
+                        .values.toList()
                 }
                 .onFailure { errorMsg = "Lỗi backend: ${it.message}" }
             isLoading = false
