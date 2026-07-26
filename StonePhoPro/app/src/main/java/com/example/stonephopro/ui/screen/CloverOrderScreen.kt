@@ -20,10 +20,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import com.example.stonephopro.components.Button3D
+import com.example.stonephopro.model.Invoice
+import com.example.stonephopro.model.Product
+import com.example.stonephopro.utils.InvoiceStorage
+import com.example.stonephopro.utils.PrinterConfig
+import com.example.stonephopro.utils.SocketPrinter
 import com.example.stonephopro.utils.clover.CloverConfig
+import com.example.stonephopro.utils.clover.CloverLineItem
 import com.example.stonephopro.utils.clover.CloverOrder
 import com.example.stonephopro.utils.clover.CloverRepository
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -265,6 +273,10 @@ fun CloverOrderScreen(onBack: () -> Unit) {
                         OrderDetailPanel(
                             order    = order,
                             onClose  = { selectedOrder = null },
+                            onPaid   = {
+                                openOrders    = openOrders.filter { it.id != order.id }
+                                selectedOrder = null
+                            },
                             modifier = Modifier.fillMaxHeight().weight(0.45f)
                         )
                     }
@@ -422,8 +434,14 @@ private fun ToGoList(
 private fun OrderDetailPanel(
     order: CloverOrder,
     onClose: () -> Unit,
+    onPaid: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val scope   = rememberCoroutineScope()
+    var payResult     by remember { mutableStateOf("") }
+    var showPayDialog by remember { mutableStateOf(false) }
+
     val timeStr = remember(order.createdTime) {
         if (order.createdTime > 0)
             SimpleDateFormat("HH:mm  dd/MM/yyyy", Locale.US).format(Date(order.createdTime))
@@ -520,7 +538,87 @@ private fun OrderDetailPanel(
                     fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF1565C0)
                 )
             }
+
+            // Nút thanh toán
+            Button3D(
+                text = "💳 Thanh toán",
+                onClick = {
+                    scope.launch {
+                        val lineItemsList = order.lineItems?.elements ?: emptyList()
+                        val products = lineItemsList.flatMap { li ->
+                            val name = li.item?.name?.takeIf { it.isNotBlank() }
+                                ?: li.name.takeIf { it.isNotBlank() }
+                                ?: "(Không tên)"
+                            val unitPrice = li.price / 100.0
+                            val qty = li.quantity.roundToInt().coerceAtLeast(1)
+                            List(qty) { idx ->
+                                Product(id = li.id.hashCode() + idx, name = name, price = unitPrice, category = "Clover")
+                            }
+                        }
+                        val totalDollars = order.total / 100.0
+                        val subtotal     = totalDollars / 1.08
+                        val tax          = totalDollars - subtotal
+                        val now          = java.util.Calendar.getInstance()
+                        val dateStr      = SimpleDateFormat("MM-dd-yyyy", Locale.US).format(now.time)
+                        val timeNowStr   = SimpleDateFormat("HH:mm", Locale.US).format(now.time)
+                        val invoiceId    = InvoiceStorage.generateInvoiceId()
+
+                        InvoiceStorage.saveInvoice(
+                            context,
+                            Invoice(
+                                id       = invoiceId,
+                                items    = products,
+                                subtotal = subtotal,
+                                discount = 0.0,
+                                tax      = tax,
+                                total    = totalDollars,
+                                date     = dateStr,
+                                time     = timeNowStr
+                            )
+                        )
+
+                        val receiptText = buildCloverReceiptText(
+                            invoiceId  = invoiceId,
+                            tableTitle = order.title,
+                            lineItems  = lineItemsList,
+                            totalCents = order.total,
+                            date       = dateStr,
+                            time       = timeNowStr
+                        )
+                        val (ip, port) = PrinterConfig.getSelectedIpPort() ?: ("192.168.0.114" to 9100)
+                        payResult = try {
+                            SocketPrinter.printText(ip, port, receiptText)
+                            "✅ In thành công · Hóa đơn $invoiceId"
+                        } catch (e: Exception) {
+                            "⚠️ Đã lưu hóa đơn $invoiceId\n❌ Lỗi máy in: ${e.message}"
+                        }
+                        showPayDialog = true
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .height(52.dp),
+                fontSize = 16.sp,
+                gradientColors = listOf(Color(0xFF43A047), Color(0xFF1B5E20))
+            )
         }
+    }
+
+    if (showPayDialog) {
+        AlertDialog(
+            onDismissRequest = { showPayDialog = false },
+            confirmButton = {
+                TextButton(onClick = { showPayDialog = false; onPaid() }) {
+                    Text("OK · Đóng bàn")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPayDialog = false }) { Text("Ở lại") }
+            },
+            title   = { Text("Thanh toán") },
+            text    = { Text(payResult) }
+        )
     }
 }
 
@@ -528,4 +626,38 @@ private fun formatCents(cents: Long): String {
     val dollars   = cents / 100
     val remainder = cents % 100
     return "$%d.%02d".format(dollars, remainder)
+}
+
+private fun buildCloverReceiptText(
+    invoiceId: String,
+    tableTitle: String,
+    lineItems: List<CloverLineItem>,
+    totalCents: Long,
+    date: String,
+    time: String
+): String {
+    val sb = StringBuilder()
+    sb.appendLine("                  STONE PHO POS")
+    sb.appendLine("          1525 Baytree Rd, ste M, Valdosta, GA ")
+    sb.appendLine("------------------------------------------------")
+    sb.appendLine("Invoice ID: $invoiceId")
+    if (tableTitle.isNotBlank()) sb.appendLine("Table: $tableTitle")
+    sb.appendLine("Date: $date               Time: $time")
+    sb.appendLine("------------------------------------------------")
+    lineItems.forEach { li ->
+        val name = (li.item?.name?.takeIf { it.isNotBlank() } ?: li.name.takeIf { it.isNotBlank() } ?: "(Không tên)").take(26)
+        val qty  = if (li.quantity % 1.0 == 0.0) li.quantity.toInt().toString() else "%.1f".format(li.quantity)
+        val amt  = "%.2f$".format(li.lineTotal / 100.0)
+        sb.appendLine("$name x$qty $amt")
+    }
+    val totalDollars = totalCents / 100.0
+    val subtotal     = totalDollars / 1.08
+    val tax          = totalDollars - subtotal
+    sb.appendLine("------------------------------------------------")
+    sb.appendLine("Subtotal:                        %.2f$".format(subtotal))
+    sb.appendLine("Tax (8%%):                       %.2f$".format(tax))
+    sb.appendLine("TOTAL:                           %.2f$".format(totalDollars))
+    sb.appendLine("------------------------------------------------")
+    sb.appendLine("                  Thank you! \n\n\n")
+    return sb.toString()
 }
