@@ -97,9 +97,11 @@ switch ($action) {
         break;
 
     case 'orders':
-        // Lấy orders không filter state — Clover Dining dùng nhiều state khác nhau
+        // Chỉ lấy orders chưa thanh toán: state=open (đang mở) hoặc state=locked (đang phục vụ)
+        // Hai filter cùng field được Clover xử lý là OR
         echo clover(
             '/orders?orderBy=createdTime+DESC'
+            . '&filter=state%3Dopen&filter=state%3Dlocked'
             . '&expand=lineItems%2ClineItems.item%2CorderType'
             . '&limit=100'
         );

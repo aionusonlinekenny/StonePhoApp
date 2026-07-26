@@ -94,17 +94,20 @@ fun CloverOrderScreen(onBack: () -> Unit) {
         scope.launch {
             // Gọi backend proxy — không cần token Clover, backend tự authenticate
             CloverRepository.fetchOpenOrdersViaProxy(CloverConfig.PROXY_SECRET)
-                .onSuccess { openOrders = it }
-                .onFailure { errorMsg   = "Lỗi backend: ${it.message}" }
+                .onSuccess { orders ->
+                    // Chỉ giữ orders chưa thanh toán: open = đang mở, locked = đang phục vụ
+                    openOrders = orders.filter { it.state == "open" || it.state == "locked" }
+                }
+                .onFailure { errorMsg = "Lỗi backend: ${it.message}" }
             isLoading = false
         }
     }
 
-    // Load ngay khi mở + auto-refresh mỗi 30 giây
+    // Load ngay khi mở + auto-refresh mỗi 10 giây
     LaunchedEffect(Unit) {
         reload()
         while (true) {
-            delay(30_000)
+            delay(10_000)
             if (!isLoading) reload()
         }
     }
@@ -135,7 +138,7 @@ fun CloverOrderScreen(onBack: () -> Unit) {
                         .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
                     Text(
-                        if (errorMsg.isEmpty()) "● Live · ↻ 30s" else "● Lỗi kết nối",
+                        if (errorMsg.isEmpty()) "● Live · ↻ 10s" else "● Lỗi kết nối",
                         color = Color.White, fontSize = 11.sp
                     )
                 }
