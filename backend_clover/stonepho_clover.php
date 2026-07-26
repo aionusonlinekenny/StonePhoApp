@@ -97,11 +97,10 @@ switch ($action) {
         break;
 
     case 'orders':
-        // Chỉ lấy orders chưa thanh toán: state=open (đang mở) hoặc state=locked (đang phục vụ)
-        // Hai filter cùng field được Clover xử lý là OR
+        // Không filter state ở PHP vì Clover AND nhiều filter params cùng field
+        // paymentState được trả về mặc định — Android lọc paymentState != FULL
         echo clover(
             '/orders?orderBy=createdTime+DESC'
-            . '&filter=state%3Dopen&filter=state%3Dlocked'
             . '&expand=lineItems%2ClineItems.item%2CorderType'
             . '&limit=100'
         );
@@ -110,6 +109,19 @@ switch ($action) {
     // Debug: xem raw orders để biết state value + tableLabel field
     case 'debug':
         echo clover('/orders?orderBy=createdTime+DESC&limit=20');
+        break;
+
+    // Debug: chỉ xem id, state, paymentState, title của 30 orders gần nhất
+    case 'states':
+        $raw   = json_decode(clover('/orders?orderBy=createdTime+DESC&limit=30'), true);
+        $items = array_map(fn($o) => [
+            'id'           => $o['id'] ?? '',
+            'title'        => $o['title'] ?? '',
+            'state'        => $o['state'] ?? '',
+            'paymentState' => $o['paymentState'] ?? '',
+            'total'        => $o['total'] ?? 0,
+        ], $raw['elements'] ?? []);
+        echo json_encode(['count' => count($items), 'orders' => $items]);
         break;
 
     // Thử endpoint khác: atomic pay + atomic orders (Clover Dining dùng system riêng)

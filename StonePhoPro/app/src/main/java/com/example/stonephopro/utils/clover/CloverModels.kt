@@ -10,8 +10,9 @@ data class CloverOrder(
     val id: String = "",
     val total: Long = 0,                    // cents
     val state: String = "",
+    val paymentState: String = "",          // OPEN | PARTIAL | FULL | CREDITED
     val title: String = "",
-    val tableLabel: String? = null,         // Số bàn (vd: "1", "2", "Table 5")
+    val tableLabel: String? = null,
     val orderType: CloverOrderTypeRef? = null,
     @SerializedName("createdTime") val createdTime: Long = 0,
     val lineItems: CloverLineItemsWrapper? = null

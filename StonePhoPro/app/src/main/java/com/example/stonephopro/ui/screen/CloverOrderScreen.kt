@@ -95,8 +95,12 @@ fun CloverOrderScreen(onBack: () -> Unit) {
             // Gọi backend proxy — không cần token Clover, backend tự authenticate
             CloverRepository.fetchOpenOrdersViaProxy(CloverConfig.PROXY_SECRET)
                 .onSuccess { orders ->
-                    // Chỉ giữ orders chưa thanh toán: open = đang mở, locked = đang phục vụ
-                    openOrders = orders.filter { it.state == "open" || it.state == "locked" }
+                    // Loại bỏ orders đã thanh toán đầy đủ (paymentState=FULL)
+                    // và orders bị xóa (state=deleted / state=closed)
+                    openOrders = orders.filter { order ->
+                        order.paymentState != "FULL" &&
+                        order.state.lowercase() !in setOf("deleted", "closed")
+                    }
                 }
                 .onFailure { errorMsg = "Lỗi backend: ${it.message}" }
             isLoading = false
