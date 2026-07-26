@@ -97,12 +97,31 @@ switch ($action) {
         break;
 
     case 'orders':
-        // Không filter state ở PHP vì Clover AND nhiều filter params cùng field
-        // paymentState được trả về mặc định — Android lọc paymentState != FULL
+        // Clover Dining: dùng atomic_order — chỉ trả orders đang THỰC SỰ mở tại bàn
+        // REST /orders giữ state=locked/OPEN cả ngày dù đã thanh toán → không dùng được
+        $atomic = clover_raw(
+            '/v3/merchants/' . MID
+            . '/atomic_order/orders?limit=100'
+            . '&expand=lineItems%2ClineItems.item%2CorderType'
+        );
+        if (!$atomic['err'] && $atomic['code'] >= 200 && $atomic['code'] < 300) {
+            echo $atomic['body'];
+        } else {
+            // Fallback: REST orders (kém chính xác hơn)
+            echo clover(
+                '/orders?orderBy=createdTime+DESC'
+                . '&expand=lineItems%2ClineItems.item%2CorderType'
+                . '&limit=100'
+            );
+        }
+        break;
+
+    case 'rest_orders':
+        // Debug: xem REST orders thô (có thể bao gồm orders đã thanh toán)
         echo clover(
             '/orders?orderBy=createdTime+DESC'
             . '&expand=lineItems%2ClineItems.item%2CorderType'
-            . '&limit=100'
+            . '&limit=50'
         );
         break;
 

@@ -95,25 +95,11 @@ fun CloverOrderScreen(onBack: () -> Unit) {
             // Gọi backend proxy — không cần token Clover, backend tự authenticate
             CloverRepository.fetchOpenOrdersViaProxy(CloverConfig.PROXY_SECRET)
                 .onSuccess { orders ->
-                    // Clover Dining không cập nhật paymentState qua REST API khi thanh toán
-                    // → lọc theo ngày hôm nay + dedup (mỗi bàn chỉ lấy order mới nhất)
-                    val cal = java.util.Calendar.getInstance().apply {
-                        set(java.util.Calendar.HOUR_OF_DAY, 0)
-                        set(java.util.Calendar.MINUTE, 0)
-                        set(java.util.Calendar.SECOND, 0)
-                        set(java.util.Calendar.MILLISECOND, 0)
+                    // atomic_order endpoint chỉ trả orders đang thực sự mở → không cần filter phức tạp
+                    // Vẫn loại deleted/closed phòng trường hợp fallback về REST
+                    openOrders = orders.filter { o ->
+                        o.state.lowercase() !in setOf("deleted", "closed")
                     }
-                    val todayMidnight = cal.timeInMillis
-                    openOrders = orders
-                        .filter { o ->
-                            o.createdTime >= todayMidnight &&
-                            o.paymentState.uppercase() != "FULL" &&
-                            o.state.lowercase() !in setOf("deleted", "closed")
-                        }
-                        // Mỗi bàn chỉ giữ order mới nhất để tránh hiện bàn cũ đã thanh toán
-                        .groupBy { it.title.trim() }
-                        .mapValues { (_, list) -> list.maxByOrNull { it.createdTime }!! }
-                        .values.toList()
                 }
                 .onFailure { errorMsg = "Lỗi backend: ${it.message}" }
             isLoading = false
