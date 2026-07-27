@@ -147,6 +147,21 @@ data class Invoice(
 
 ---
 
+## Bẫy Kotlin quan trọng — `isSelected` với nullable
+
+```kotlin
+// BUG: null?.id == null?.id → null == null → TRUE
+// → mọi bàn trống đều bị mark isSelected = true → render màu xanh đậm (selected)
+isSelected = selectedOrder?.id == order?.id
+
+// FIX: bàn trống (order == null) không bao giờ được là "selected"
+isSelected = order != null && selectedOrder?.id == order.id
+```
+
+**Triệu chứng**: tất cả bàn trống đều xanh, không có cách nào force trắng được dù đã thử `Card`, `Surface`, `Box+background`, `drawBehind` — vì màu white không bao giờ được render do điều kiện `isSelected` đứng trước.
+
+---
+
 ## Lịch sử fix quan trọng
 
 | Ngày | Vấn đề | Giải pháp |
@@ -156,3 +171,4 @@ data class Invoice(
 | 2025-07 | Quá nhiều bàn hiện là "có khách" dù POS đã đóng | Thêm `payments` expand; filter `hasPaid = payments.elements.isNotEmpty()` |
 | 2025-07 | Bàn trống màu xám không giống POS | Đổi empty table = nền trắng + viền xanh đậm |
 | 2025-07 | Màn hình giật khi refresh | Tách `isFirstLoad` vs `isRefreshing`; status bar không bao giờ ẩn |
+| 2026-07 | Bàn trống vẫn xanh dù đã force Color.White nhiều cách | Bẫy `null == null → true` trong `isSelected`; fix bằng `order != null && selectedOrder?.id == order.id` |
