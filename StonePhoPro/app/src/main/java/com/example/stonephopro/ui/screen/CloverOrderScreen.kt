@@ -49,11 +49,17 @@ private val COLOR_OCCUPIED = Color(0xFF1565C0)
 private val COLOR_EMPTY    = Color.White
 private val COLOR_SELECTED = Color(0xFF0D47A1)
 
-private data class TableSlot(val row: Int, val col: Int, val name: String, val seats: Int = 4)
+private data class TableSlot(
+    val row: Int,
+    val col: Int,
+    val name: String,                        // display label trên cell
+    val seats: Int = 4,
+    val cloverTitle: String = name           // khớp với order.title từ Clover
+)
 
 private val DINING_ROOM_LAYOUT = listOf(
     TableSlot(1, 1, "1"),  TableSlot(1, 2, "2"),  TableSlot(1, 3, "3"),  TableSlot(1, 4, "4"),
-    TableSlot(1, 5, "OUTS"),
+    TableSlot(1, 5, "OUTS", cloverTitle = "OUTSIDE"),
     TableSlot(2, 2, "5"),  TableSlot(2, 3, "6"),  TableSlot(2, 4, "7"),
     TableSlot(3, 1, "8"),  TableSlot(3, 2, "9"),  TableSlot(3, 3, "10"), TableSlot(3, 4, "11"),
     TableSlot(4, 1, "12"), TableSlot(4, 2, "13"), TableSlot(4, 3, "14"), TableSlot(4, 4, "15"),
@@ -344,7 +350,7 @@ private fun DiningFloorPlan(
                 ) {
                     for (col in 0 until GRID_COLS) {
                         val slot  = slotMap[Pair(row, col)]
-                        val order = slot?.let { tableOrderMap[it.name] }
+                        val order = slot?.let { tableOrderMap[it.cloverTitle] }
                         if (slot != null) {
                             TableCell(
                                 label      = slot.name,
