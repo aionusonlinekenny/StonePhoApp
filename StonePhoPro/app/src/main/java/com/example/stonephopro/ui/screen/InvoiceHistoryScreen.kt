@@ -395,6 +395,8 @@ fun InvoiceHistoryScreen(onBack: () -> Unit, permission: String) {
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Column {
+                                            if (invoice.tableTitle.isNotBlank())
+                                                Text("🍽️ Table: ${invoice.tableTitle}", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                                             Text("🧾 ${index + 1}. Order ID: ${invoice.id}", fontWeight = FontWeight.SemiBold)
                                             Text("💵 Total: %.2f$".format(invoice.total), fontSize = 13.sp)
                                         }
@@ -429,6 +431,8 @@ fun InvoiceHistoryScreen(onBack: () -> Unit, permission: String) {
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column {
+                                        if (invoice.tableTitle.isNotBlank())
+                                            Text("🍽️ Table: ${invoice.tableTitle}", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                                         Text("🧾 ${index + 1}. Order ID: ${invoice.id}", fontWeight = FontWeight.SemiBold)
                                         Text("💵 Total: %.2f$".format(invoice.total), fontSize = 13.sp)
                                     }
@@ -437,7 +441,6 @@ fun InvoiceHistoryScreen(onBack: () -> Unit, permission: String) {
                                         Text("🕒 ${invoice.time}", fontSize = 13.sp, color = Color.Gray)
 
                                         Row {
-                                            // ✅ Nút "❌ Xoá"
                                             Text(
                                                 "❌ Xoá",
                                                 color = if (permission == "admin") Color.Red else Color.LightGray,
@@ -448,30 +451,24 @@ fun InvoiceHistoryScreen(onBack: () -> Unit, permission: String) {
 
                                             Spacer(modifier = Modifier.width(8.dp))
 
-                                            // ✅ Nút "🔄 Reprint"
                                             Text(
                                                 "🔄 Reprint",
                                                 color = Color.Blue,
                                                 modifier = Modifier.clickable {
                                                     scope.launch {
-                                                        val now = Calendar.getInstance()
-                                                        val dateStr = SimpleDateFormat("MM-dd-yyyy", Locale.US).format(now.time)
-                                                        val timeStr = SimpleDateFormat("HH:mm", Locale.US).format(now.time)
-
-                                                        val productMap = invoice.items.groupBy { it } // Chuyển List<Product> thành Map<Product, Int>
+                                                        val productMap = invoice.items.groupBy { it }
                                                             .mapValues { it.value.size }
-
                                                         val invoiceText = buildPrintableReceipt(
                                                             invoice.id,
-                                                            productMap, // ✅ Truyền đúng kiểu Map<Product, Int>
+                                                            productMap,
                                                             invoice.date,
                                                             invoice.time,
                                                             invoice.subtotal,
                                                             invoice.discount,
                                                             invoice.tax,
-                                                            invoice.total
+                                                            invoice.total,
+                                                            invoice.tableTitle
                                                         )
-
                                                         val (ip, port) = PrinterConfig.getSelectedIpPort() ?: ("192.168.0.114" to 9100)
                                                         try {
                                                             SocketPrinter.printText(ip, port, invoiceText)
@@ -486,7 +483,6 @@ fun InvoiceHistoryScreen(onBack: () -> Unit, permission: String) {
                                             )
                                         }
                                     }
-
                                 }
                             }
                         }

@@ -219,13 +219,15 @@ fun buildPrintableReceipt(
     subtotal: Double,
     discount: Double,
     tax: Double,
-    total: Double
+    total: Double,
+    tableTitle: String = ""
 ): String {
     val sb = StringBuilder()
     sb.appendLine("                  STONE PHO POS")
     sb.appendLine("          1525 Baytree Rd, ste M, Valdosta, GA ")
     sb.appendLine("------------------------------------------------")
     sb.appendLine("Invoice ID: $invoiceId")
+    if (tableTitle.isNotBlank()) sb.appendLine("Table: $tableTitle")
     sb.appendLine("Date: $date               Time: $time")
     sb.appendLine("------------------------------------------------")
 

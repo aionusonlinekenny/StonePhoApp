@@ -566,14 +566,15 @@ private fun OrderDetailPanel(
                         InvoiceStorage.saveInvoice(
                             context,
                             Invoice(
-                                id       = invoiceId,
-                                items    = products,
-                                subtotal = subtotal,
-                                discount = 0.0,
-                                tax      = tax,
-                                total    = totalDollars,
-                                date     = dateStr,
-                                time     = timeNowStr
+                                id         = invoiceId,
+                                items      = products,
+                                subtotal   = subtotal,
+                                discount   = 0.0,
+                                tax        = tax,
+                                total      = totalDollars,
+                                date       = dateStr,
+                                time       = timeNowStr,
+                                tableTitle = order.title
                             )
                         )
 

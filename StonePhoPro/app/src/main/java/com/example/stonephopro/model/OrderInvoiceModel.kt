@@ -9,6 +9,7 @@ data class Invoice(
     val tax: Double,
     val total: Double,
     val date: String,
-    val time: String
+    val time: String,
+    val tableTitle: String = ""   // số bàn (trống nếu là Quick Pay / POS thường)
 )
 

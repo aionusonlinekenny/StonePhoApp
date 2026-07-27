@@ -56,12 +56,18 @@ fun HeaderScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Button3D(
+                text = "🖥️ Clover Dining",
+                onClick = { onOpenClover() },
+                gradientColors = listOf(Color(0xFF1A237E), Color(0xFF1565C0))
+            )
+
+            Button3D(
                 text = "💳 Quick Pay",
                 onClick = {
-                    quickPayName = TextFieldValue("Table_") // ✅ Gán tên mặc định
+                    quickPayName = TextFieldValue("Table_")
                     showQuickPayDialog = true
                 },
-                gradientColors = listOf(Color(0xFF4FC3F7), Color(0xFF0288D1)) // Màu xanh gradient
+                gradientColors = listOf(Color(0xFF4FC3F7), Color(0xFF0288D1))
             )
 
             Button3D(
