@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +23,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -477,8 +479,10 @@ private fun OrderDetailPanel(
 ) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
-    var payResult       by remember { mutableStateOf("") }
-    var showPayDialog   by remember { mutableStateOf(false) }
+    var payResult          by remember { mutableStateOf("") }
+    var showPayDialog      by remember { mutableStateOf(false) }
+    var showChangeCalc     by remember { mutableStateOf(false) }
+    var receivedAmountText by remember { mutableStateOf("") }
 
     val timeStr = remember(order.createdTime) {
         if (order.createdTime > 0)
@@ -570,60 +574,12 @@ private fun OrderDetailPanel(
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Cash payment: save invoice + print + close table
+                // Cash payment: open change calculator first
                 Button3D(
                     text = "💵 Cash",
                     onClick = {
-                        scope.launch {
-                            val lineItemsList = order.lineItems?.elements ?: emptyList()
-                            val products = lineItemsList.flatMap { li ->
-                                val name = li.item?.name?.takeIf { it.isNotBlank() }
-                                    ?: li.name.takeIf { it.isNotBlank() } ?: "(Không tên)"
-                                val qty = li.quantity.roundToInt().coerceAtLeast(1)
-                                List(qty) { idx -> Product(id = li.id.hashCode() + idx, name = name, price = li.price / 100.0, category = "Clover") }
-                            }
-                            val totalDollars = order.total / 100.0
-                            val subtotal     = totalDollars / 1.08
-                            val tax          = totalDollars - subtotal
-                            val now          = java.util.Calendar.getInstance()
-                            val dateStr      = SimpleDateFormat("MM-dd-yyyy", Locale.US).format(now.time)
-                            val timeNow      = SimpleDateFormat("HH:mm", Locale.US).format(now.time)
-                            val invoiceId    = InvoiceStorage.generateInvoiceId()
-
-                            InvoiceStorage.saveInvoice(context, Invoice(
-                                id = invoiceId, items = products,
-                                subtotal = subtotal, discount = 0.0, tax = tax,
-                                total = totalDollars, date = dateStr, time = timeNow,
-                                tableTitle = order.title
-                            ))
-
-                            val receiptText = buildCloverReceiptText(
-                                invoiceId  = invoiceId,
-                                tableTitle = order.title,
-                                lineItems  = lineItemsList,
-                                totalCents = order.total,
-                                date       = dateStr,
-                                time       = timeNow
-                            )
-                            val (ip, port) = PrinterConfig.getSelectedIpPort() ?: ("192.168.0.114" to 9100)
-                            val printMsg = try {
-                                SocketPrinter.printText(ip, port, receiptText)
-                                "✅ In thành công · Hóa đơn $invoiceId"
-                            } catch (e: Exception) {
-                                "⚠️ Đã lưu hóa đơn $invoiceId\n❌ Lỗi máy in: ${e.message}"
-                            }
-
-                            // Xoá order trên Clover để POS tự release bàn
-                            val deleteMsg = CloverRepository.deleteOrderViaProxy(
-                                CloverConfig.PROXY_SECRET, order.id
-                            ).fold(
-                                onSuccess = { "✅ Đã release bàn ${order.title} trên Clover POS" },
-                                onFailure = { "⚠️ Không thể xoá order Clover: ${it.message}" }
-                            )
-
-                            payResult = "$printMsg\n$deleteMsg"
-                            showPayDialog = true
-                        }
+                        receivedAmountText = ""
+                        showChangeCalc = true
                     },
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                     fontSize = 14.sp,
@@ -632,6 +588,158 @@ private fun OrderDetailPanel(
 
             }
         }
+    }
+
+    // ── Change calculator dialog ──────────────────────────────────────────────
+    if (showChangeCalc) {
+        val totalDollars  = order.total / 100.0
+        val received      = receivedAmountText.toDoubleOrNull() ?: 0.0
+        val change        = received - totalDollars
+        val canConfirm    = received >= totalDollars
+
+        AlertDialog(
+            onDismissRequest = { showChangeCalc = false },
+            title = {
+                Text(
+                    text = if (order.title.isNotBlank()) "💵 Bàn ${order.title} — Thanh toán Cash"
+                           else "💵 Thanh toán Cash",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    // Total due
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFE3F2FD), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Cần thanh toán", fontSize = 14.sp, color = Color(0xFF1565C0))
+                        Text(
+                            formatCents(order.total),
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1565C0)
+                        )
+                    }
+
+                    // Received amount input
+                    OutlinedTextField(
+                        value = receivedAmountText,
+                        onValueChange = { v ->
+                            // Chỉ cho phép số và dấu chấm thập phân
+                            if (v.isEmpty() || v.matches(Regex("^\\d{0,6}(\\.\\d{0,2})?$"))) {
+                                receivedAmountText = v
+                            }
+                        },
+                        label = { Text("Tiền nhận từ khách ($)") },
+                        placeholder = { Text("0.00") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = LocalTextStyle.current.copy(
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.End
+                        )
+                    )
+
+                    // Change display
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                if (canConfirm) Color(0xFFE8F5E9) else Color(0xFFFFEBEE),
+                                RoundedCornerShape(8.dp)
+                            )
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            if (canConfirm) "Tiền thối lại" else "Còn thiếu",
+                            fontSize = 14.sp,
+                            color = if (canConfirm) Color(0xFF2E7D32) else Color(0xFFC62828)
+                        )
+                        Text(
+                            text = if (received == 0.0) "—"
+                                   else if (canConfirm) "$%,.2f".format(change)
+                                   else "-$%,.2f".format(-change),
+                            fontSize = 26.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (canConfirm) Color(0xFF2E7D32) else Color(0xFFC62828)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showChangeCalc = false
+                        scope.launch {
+                            val lineItemsList = order.lineItems?.elements ?: emptyList()
+                            val products = lineItemsList.flatMap { li ->
+                                val name = li.item?.name?.takeIf { it.isNotBlank() }
+                                    ?: li.name.takeIf { it.isNotBlank() } ?: "(Không tên)"
+                                val qty = li.quantity.roundToInt().coerceAtLeast(1)
+                                List(qty) { idx -> Product(id = li.id.hashCode() + idx, name = name, price = li.price / 100.0, category = "Clover") }
+                            }
+                            val td       = order.total / 100.0
+                            val subtotal = td / 1.08
+                            val tax      = td - subtotal
+                            val now      = java.util.Calendar.getInstance()
+                            val dateStr  = SimpleDateFormat("MM-dd-yyyy", Locale.US).format(now.time)
+                            val timeNow  = SimpleDateFormat("HH:mm", Locale.US).format(now.time)
+                            val invoiceId = InvoiceStorage.generateInvoiceId()
+
+                            InvoiceStorage.saveInvoice(context, Invoice(
+                                id = invoiceId, items = products,
+                                subtotal = subtotal, discount = 0.0, tax = tax,
+                                total = td, date = dateStr, time = timeNow,
+                                tableTitle = order.title
+                            ))
+
+                            val receiptText = buildCloverReceiptText(
+                                invoiceId    = invoiceId,
+                                tableTitle   = order.title,
+                                lineItems    = lineItemsList,
+                                totalCents   = order.total,
+                                receivedAmt  = received,
+                                changeAmt    = change,
+                                date         = dateStr,
+                                time         = timeNow
+                            )
+                            val (ip, port) = PrinterConfig.getSelectedIpPort() ?: ("192.168.0.114" to 9100)
+                            val printMsg = try {
+                                SocketPrinter.printText(ip, port, receiptText)
+                                "✅ In thành công · Hóa đơn $invoiceId"
+                            } catch (e: Exception) {
+                                "⚠️ Đã lưu hóa đơn $invoiceId\n❌ Lỗi máy in: ${e.message}"
+                            }
+                            val deleteMsg = CloverRepository.deleteOrderViaProxy(
+                                CloverConfig.PROXY_SECRET, order.id
+                            ).fold(
+                                onSuccess = { "✅ Đã release bàn ${order.title} trên Clover POS" },
+                                onFailure = { "⚠️ Không thể xoá order Clover: ${it.message}" }
+                            )
+                            payResult = "$printMsg\n$deleteMsg"
+                            showPayDialog = true
+                        }
+                    },
+                    enabled = canConfirm,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                ) {
+                    Text("🖨️ Xác nhận & In bill", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showChangeCalc = false }) { Text("Hủy") }
+            }
+        )
     }
 
     // Cash payment result dialog
@@ -664,6 +772,8 @@ private fun buildCloverReceiptText(
     tableTitle: String,
     lineItems: List<CloverLineItem>,
     totalCents: Long,
+    receivedAmt: Double = 0.0,
+    changeAmt: Double = 0.0,
     date: String,
     time: String
 ): String {
@@ -688,6 +798,11 @@ private fun buildCloverReceiptText(
     sb.appendLine("Subtotal:                        %.2f$".format(subtotal))
     sb.appendLine("Tax (8%%):                       %.2f$".format(tax))
     sb.appendLine("TOTAL:                           %.2f$".format(totalDollars))
+    if (receivedAmt > 0.0) {
+        sb.appendLine("------------------------------------------------")
+        sb.appendLine("Cash received:                   %.2f$".format(receivedAmt))
+        sb.appendLine("Change:                          %.2f$".format(changeAmt))
+    }
     sb.appendLine("------------------------------------------------")
     sb.appendLine("                  Thank you! \n\n\n")
     return sb.toString()
