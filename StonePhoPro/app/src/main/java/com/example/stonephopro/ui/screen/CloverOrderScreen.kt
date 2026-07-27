@@ -226,8 +226,8 @@ fun CloverOrderScreen(onBack: () -> Unit) {
         val occupiedCount = tableOrderMap.size
         Text(
             text = if (isFirstLoad) "Đang tải..."
-                   else if (openOrders.isEmpty()) "[BUILD-6] Không có order nào đang mở"
-                   else "[BUILD-6] ${openOrders.size} orders từ server · $occupiedCount bàn xanh",
+                   else if (openOrders.isEmpty()) "[BUILD-7] Không có order nào đang mở"
+                   else "[BUILD-7] ${openOrders.size} orders từ server · $occupiedCount bàn xanh",
             fontSize = 11.sp,
             color = Color(0xFF616161),
             modifier = Modifier
@@ -382,42 +382,43 @@ private fun TableCell(
         isOccupied -> COLOR_OCCUPIED
         else       -> Color(0xFFFFFFFF)
     }
-    val borderColor = when {
-        isSelected  -> Color(0xFF64B5F6)
-        !isOccupied -> Color(0xFF1565C0)
-        else        -> Color.Transparent
+    val borderStroke = when {
+        isSelected  -> BorderStroke(2.5.dp, Color(0xFF64B5F6))
+        !isOccupied -> BorderStroke(1.5.dp, Color(0xFF1565C0))
+        else        -> null
     }
-    val borderWidth = if (isSelected) 2.5.dp else if (!isOccupied) 1.5.dp else 0.dp
-    val textColor   = if (isOccupied || isSelected) Color.White else Color(0xFF1A237E)
-    val cornerPx    = 10  // saved as Int; toPx() called inside drawBehind
+    val textColor = if (isOccupied || isSelected) Color.White else Color(0xFF1A237E)
+    val shape     = RoundedCornerShape(10.dp)
 
-    Box(
-        modifier = modifier
-            .drawBehind {
-                // Canvas-level draw — bypasses Material theme entirely
-                drawRoundRect(color = bgColor, cornerRadius = CornerRadius(cornerPx.dp.toPx()))
-            }
-            .border(borderWidth, borderColor, RoundedCornerShape(cornerPx.dp))
-            .clip(RoundedCornerShape(cornerPx.dp))
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
+    Surface(
+        onClick          = onClick,
+        modifier         = modifier,
+        shape            = shape,
+        color            = bgColor,
+        border           = borderStroke,
+        shadowElevation  = if (isOccupied || isSelected) 2.dp else 0.dp
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+        Box(
+            modifier         = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
         ) {
-            Text("🪑", fontSize = 12.sp)
-            Text(
-                label,
-                color = textColor,
-                fontWeight = FontWeight.Bold,
-                fontSize = if (label.length <= 2) 18.sp else 12.sp
-            )
-            Text(
-                if (isOccupied && total != null) formatCents(total) else "$seats 🪑",
-                color = textColor.copy(alpha = 0.75f),
-                fontSize = 10.sp
-            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text("🪑", fontSize = 12.sp)
+                Text(
+                    label,
+                    color      = textColor,
+                    fontWeight = FontWeight.Bold,
+                    fontSize   = if (label.length <= 2) 18.sp else 12.sp
+                )
+                Text(
+                    if (isOccupied && total != null) formatCents(total) else "$seats 🪑",
+                    color    = textColor.copy(alpha = 0.75f),
+                    fontSize = 10.sp
+                )
+            }
         }
     }
 }
