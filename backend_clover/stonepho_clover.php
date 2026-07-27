@@ -5,7 +5,7 @@ error_reporting(E_ALL);
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 
-define('SCRIPT_VER', 'v20250727b');
+define('SCRIPT_VER', 'v20250727c');
 define('API_KEY',    'StonePhoClover@2024');
 define('MID',        'GW3XFCV71AK81');
 define('TOKEN',      'c30698f2-347e-add6-b758-44285d0e6cac');
@@ -86,13 +86,27 @@ switch ($action) {
         )));
 
     case 'orders':
-        // atomic_order/orders does NOT expand payments reliably (atomic = pre-finalize).
-        // Use regular /orders which supports payments expand properly.
-        die(clover(
+        // Fetch with payments expand, filter server-side — more reliable than Android Gson parsing.
+        $raw     = json_decode(clover(
             '/orders?orderBy=createdTime+DESC'
             . '&expand=lineItems%2ClineItems.item%2CorderType%2Cpayments'
             . '&limit=50'
-        ));
+        ), true);
+        $all      = isset($raw['elements']) ? $raw['elements'] : array();
+        $cutoffMs = (time() - 8 * 3600) * 1000;
+        $open     = array();
+        foreach ($all as $o) {
+            $pmts    = isset($o['payments']['elements']) ? $o['payments']['elements'] : array();
+            $hasPaid = count($pmts) > 0;
+            $created = isset($o['createdTime']) ? intval($o['createdTime']) : 0;
+            $state   = strtolower(isset($o['state']) ? $o['state'] : '');
+            $stateOk = !in_array($state, array('deleted', 'closed'));
+            if (!$hasPaid && $stateOk && $created >= $cutoffMs) {
+                $open[] = $o;
+            }
+        }
+        $raw['elements'] = $open;
+        die(json_encode($raw));
 
     case 'rest_orders':
         die(clover(

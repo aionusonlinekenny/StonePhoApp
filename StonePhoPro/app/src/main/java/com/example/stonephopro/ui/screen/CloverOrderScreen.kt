@@ -125,20 +125,12 @@ fun CloverOrderScreen(onBack: () -> Unit) {
     }
 
     fun applyFilter(orders: List<CloverOrder>): List<CloverOrder> {
-        val eightHoursAgo = System.currentTimeMillis() - (8L * 60 * 60 * 1000)
+        // PHP pre-filters: paid orders, closed/deleted state, older than 8h.
+        // Android only handles local cash closings (SharedPreferences).
         return orders
             .filter { o ->
-                val closeTime     = closedTables[o.title.trim()]
-                val hasPaid       = (o.payments?.elements?.size ?: 0) > 0
-                val stateIsClosed = o.state.lowercase() in setOf("deleted", "closed")
-                // Exclude: paid via card on POS (has payment record)
-                // Exclude: state is explicitly closed/deleted
-                // Exclude: older than 8 hours
-                // Exclude: manually closed via app and no newer seating since
-                !hasPaid &&
-                !stateIsClosed &&
-                o.createdTime >= eightHoursAgo &&
-                (closeTime == null || o.createdTime > closeTime)
+                val closeTime = closedTables[o.title.trim()]
+                closeTime == null || o.createdTime > closeTime
             }
             .groupBy { it.title.trim() }
             .mapValues { (_, list) -> list.maxByOrNull { it.createdTime }!! }
