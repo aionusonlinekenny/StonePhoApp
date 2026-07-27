@@ -479,7 +479,6 @@ private fun OrderDetailPanel(
     val scope   = rememberCoroutineScope()
     var payResult       by remember { mutableStateOf("") }
     var showPayDialog   by remember { mutableStateOf(false) }
-    var showCloseDialog by remember { mutableStateOf(false) }
 
     val timeStr = remember(order.createdTime) {
         if (order.createdTime > 0)
@@ -626,19 +625,11 @@ private fun OrderDetailPanel(
                             showPayDialog = true
                         }
                     },
-                    modifier = Modifier.weight(1f).height(52.dp),
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
                     fontSize = 14.sp,
                     gradientColors = listOf(Color(0xFF43A047), Color(0xFF1B5E20))
                 )
 
-                // Card payment: just close table locally (Clover POS handled billing)
-                Button3D(
-                    text = "💳 Thẻ",
-                    onClick = { showCloseDialog = true },
-                    modifier = Modifier.weight(1f).height(52.dp),
-                    fontSize = 14.sp,
-                    gradientColors = listOf(Color(0xFF1565C0), Color(0xFF0D47A1))
-                )
             }
         }
     }
@@ -660,22 +651,6 @@ private fun OrderDetailPanel(
         )
     }
 
-    // Card close confirmation dialog
-    if (showCloseDialog) {
-        AlertDialog(
-            onDismissRequest = { showCloseDialog = false },
-            confirmButton = {
-                TextButton(onClick = { showCloseDialog = false; onCloseTable() }) {
-                    Text("Xác nhận đóng bàn")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCloseDialog = false }) { Text("Hủy") }
-            },
-            title = { Text("Đóng bàn thanh toán Thẻ") },
-            text  = { Text("Bàn ${order.title} đã thanh toán qua Clover POS?\nBàn sẽ được đánh dấu là trống trên app.") }
-        )
-    }
 }
 
 private fun formatCents(cents: Long): String {
