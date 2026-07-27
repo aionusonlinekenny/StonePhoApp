@@ -165,7 +165,7 @@ fun CloverOrderScreen(onBack: () -> Unit) {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF5F5F5))) {
 
         // ── Top bar ──────────────────────────────────────────────────────────
         Row(
@@ -269,12 +269,13 @@ fun CloverOrderScreen(onBack: () -> Unit) {
                 }
             }
 
-            Row(modifier = Modifier.fillMaxSize()) {
+            Row(modifier = Modifier.fillMaxSize().background(Color.White)) {
                 val mapWeight = if (selectedOrder != null) 0.55f else 1f
                 Box(
                     modifier = Modifier
                         .fillMaxHeight()
                         .weight(mapWeight)
+                        .background(Color.White)
                         .padding(12.dp)
                 ) {
                     when (selectedTab) {
@@ -323,7 +324,7 @@ private fun DiningFloorPlan(
 ) {
     val slotMap = remember { DINING_ROOM_LAYOUT.associateBy { Pair(it.row, it.col) } }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(8.dp)) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color.White).padding(8.dp)) {
         // Use 85% of available space for cells; remainder becomes natural gap
         val totalGapH = maxWidth  * 0.15f
         val totalGapV = maxHeight * 0.15f
