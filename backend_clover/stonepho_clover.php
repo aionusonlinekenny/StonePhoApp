@@ -5,7 +5,7 @@ error_reporting(E_ALL);
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 
-define('SCRIPT_VER', 'v20250727');
+define('SCRIPT_VER', 'v20250727b');
 define('API_KEY',    'StonePhoClover@2024');
 define('MID',        'GW3XFCV71AK81');
 define('TOKEN',      'c30698f2-347e-add6-b758-44285d0e6cac');
@@ -86,14 +86,8 @@ switch ($action) {
         )));
 
     case 'orders':
-        $r = clover_call(
-            'https://api.clover.com/v3/merchants/' . MID
-            . '/atomic_order/orders?limit=50'
-            . '&expand=lineItems%2ClineItems.item%2CorderType%2Cpayments'
-        );
-        if ($r['body'] !== '' && $r['code'] >= 200 && $r['code'] < 300) {
-            die($r['body']);
-        }
+        // atomic_order/orders does NOT expand payments reliably (atomic = pre-finalize).
+        // Use regular /orders which supports payments expand properly.
         die(clover(
             '/orders?orderBy=createdTime+DESC'
             . '&expand=lineItems%2ClineItems.item%2CorderType%2Cpayments'
@@ -128,6 +122,25 @@ switch ($action) {
     case 'atomic':
         $r = clover_call('https://api.clover.com/v3/merchants/' . MID . '/atomic_order/orders?limit=20');
         die(($r['body'] !== '') ? $r['body'] : json_encode(array('error' => $r['err'], 'code' => $r['code'])));
+
+    case 'check_payments':
+        // Debug: show title + payment count for recent orders — verify payments expand works
+        $raw   = json_decode(clover(
+            '/orders?orderBy=createdTime+DESC&expand=payments&limit=20'
+        ), true);
+        $elems = isset($raw['elements']) ? $raw['elements'] : array();
+        $list  = array();
+        foreach ($elems as $o) {
+            $pmts = isset($o['payments']['elements']) ? $o['payments']['elements'] : array();
+            $list[] = array(
+                'id'           => isset($o['id'])    ? substr($o['id'], -6)    : '',
+                'title'        => isset($o['title']) ? $o['title']             : '(no title)',
+                'state'        => isset($o['state']) ? $o['state']             : '',
+                'paymentCount' => count($pmts),
+                'hasPaid'      => count($pmts) > 0,
+            );
+        }
+        die(json_encode(array('ver' => SCRIPT_VER, 'orders' => $list)));
 
     case 'tables':
         die(clover('/tables?limit=200'));
