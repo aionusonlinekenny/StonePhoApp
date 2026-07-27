@@ -17,6 +17,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -374,46 +376,47 @@ private fun TableCell(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val containerColor = when {
+    val bgColor = when {
         isSelected -> COLOR_SELECTED
         isOccupied -> COLOR_OCCUPIED
-        else       -> Color(0xFFFFFFFF)   // force solid white, not theme-dependent
+        else       -> Color(0xFFFFFFFF)
     }
-    val border = when {
-        isSelected  -> BorderStroke(2.5.dp, Color(0xFF64B5F6))
-        !isOccupied -> BorderStroke(1.5.dp, Color(0xFF1565C0))
-        else        -> null
+    val borderColor = when {
+        isSelected  -> Color(0xFF64B5F6)
+        !isOccupied -> Color(0xFF1565C0)
+        else        -> Color.Transparent
     }
-    val textColor = if (isOccupied || isSelected) Color.White else Color(0xFF1A237E)
+    val borderWidth = if (isSelected) 2.5.dp else if (!isOccupied) 1.5.dp else 0.dp
+    val textColor   = if (isOccupied || isSelected) Color.White else Color(0xFF1A237E)
+    val cornerPx    = 10  // saved as Int; toPx() called inside drawBehind
 
-    Card(
-        onClick    = onClick,
-        modifier   = modifier,
-        shape      = RoundedCornerShape(10.dp),
-        colors     = CardDefaults.cardColors(containerColor = containerColor),
-        border     = border,
-        elevation  = CardDefaults.cardElevation(
-            defaultElevation = if (isOccupied || isSelected) 3.dp else 0.dp
-        )
-    ) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text("🪑", fontSize = 12.sp)
-                Text(
-                    label,
-                    color = textColor,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = if (label.length <= 2) 18.sp else 12.sp
-                )
-                Text(
-                    if (isOccupied && total != null) formatCents(total) else "$seats 🪑",
-                    color = textColor.copy(alpha = 0.75f),
-                    fontSize = 10.sp
-                )
+    Box(
+        modifier = modifier
+            .drawBehind {
+                // Canvas-level draw — bypasses Material theme entirely
+                drawRoundRect(color = bgColor, cornerRadius = CornerRadius(cornerPx.dp.toPx()))
             }
+            .border(borderWidth, borderColor, RoundedCornerShape(cornerPx.dp))
+            .clip(RoundedCornerShape(cornerPx.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text("🪑", fontSize = 12.sp)
+            Text(
+                label,
+                color = textColor,
+                fontWeight = FontWeight.Bold,
+                fontSize = if (label.length <= 2) 18.sp else 12.sp
+            )
+            Text(
+                if (isOccupied && total != null) formatCents(total) else "$seats 🪑",
+                color = textColor.copy(alpha = 0.75f),
+                fontSize = 10.sp
+            )
         }
     }
 }

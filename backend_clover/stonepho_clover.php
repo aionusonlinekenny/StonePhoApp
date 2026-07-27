@@ -93,12 +93,12 @@ switch ($action) {
             . '&limit=50'
         ), true);
         $all      = isset($raw['elements']) ? $raw['elements'] : array();
-        $cutoffMs = (time() - 8 * 3600) * 1000;
+        $cutoffMs = ((float)time() - 8.0 * 3600) * 1000.0;
         $open     = array();
         foreach ($all as $o) {
             $pmts    = isset($o['payments']['elements']) ? $o['payments']['elements'] : array();
             $hasPaid = count($pmts) > 0;
-            $created = isset($o['createdTime']) ? intval($o['createdTime']) : 0;
+            $created = isset($o['createdTime']) ? (float)$o['createdTime'] : 0.0;
             $state   = strtolower(isset($o['state']) ? $o['state'] : '');
             $stateOk = !in_array($state, array('deleted', 'closed'));
             if (!$hasPaid && $stateOk && $created >= $cutoffMs) {
@@ -136,6 +136,33 @@ switch ($action) {
     case 'atomic':
         $r = clover_call('https://api.clover.com/v3/merchants/' . MID . '/atomic_order/orders?limit=20');
         die(($r['body'] !== '') ? $r['body'] : json_encode(array('error' => $r['err'], 'code' => $r['code'])));
+
+    case 'open_tables':
+        // Debug: show exactly what the 'orders' action sends to the Android app after filtering
+        $raw2    = json_decode(clover(
+            '/orders?orderBy=createdTime+DESC'
+            . '&expand=lineItems%2ClineItems.item%2CorderType%2Cpayments'
+            . '&limit=50'
+        ), true);
+        $all2     = isset($raw2['elements']) ? $raw2['elements'] : array();
+        $cutoff2  = ((float)time() - 8.0 * 3600) * 1000.0;
+        $result2  = array();
+        foreach ($all2 as $o) {
+            $pmts    = isset($o['payments']['elements']) ? $o['payments']['elements'] : array();
+            $hasPaid = count($pmts) > 0;
+            $created = isset($o['createdTime']) ? (float)$o['createdTime'] : 0;
+            $state   = strtolower(isset($o['state']) ? $o['state'] : '');
+            $stateOk = !in_array($state, array('deleted', 'closed'));
+            $passAge = $created >= $cutoff2;
+            $result2[] = array(
+                'title'   => isset($o['title']) && $o['title'] !== '' ? $o['title'] : '(no title)',
+                'state'   => $state,
+                'hasPaid' => $hasPaid,
+                'passAge' => $passAge,
+                'KEPT'    => (!$hasPaid && $stateOk && $passAge),
+            );
+        }
+        die(json_encode(array('ver' => SCRIPT_VER, 'cutoffMs' => $cutoff2, 'orders' => $result2)));
 
     case 'check_payments':
         // Debug: show title + payment count for recent orders — verify payments expand works
