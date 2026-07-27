@@ -328,15 +328,25 @@ private fun DiningFloorPlan(
 ) {
     val slotMap = remember { DINING_ROOM_LAYOUT.associateBy { Pair(it.row, it.col) } }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val gap      = 8.dp
-        val cellSize = minOf(
-            (maxWidth  - gap * (GRID_COLS - 1)) / GRID_COLS,
-            (maxHeight - gap * (GRID_ROWS - 1)) / GRID_ROWS
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(8.dp)) {
+        // Use 85% of available space for cells; remainder becomes natural gap
+        val totalGapH = maxWidth  * 0.15f
+        val totalGapV = maxHeight * 0.15f
+        val gapH      = totalGapH / (GRID_COLS - 1)
+        val gapV      = totalGapV / (GRID_ROWS - 1)
+        val cellSize  = minOf(
+            (maxWidth  - totalGapH) / GRID_COLS,
+            (maxHeight - totalGapV) / GRID_ROWS
         )
-        Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+        Column(
+            modifier            = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
             for (row in 0 until GRID_ROWS) {
-                Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                Row(
+                    modifier            = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
                     for (col in 0 until GRID_COLS) {
                         val slot  = slotMap[Pair(row, col)]
                         val order = slot?.let { tableOrderMap[it.name] }
@@ -383,8 +393,8 @@ private fun TableCell(
             .clip(RoundedCornerShape(10.dp))
             .background(bgColor)
             .then(
-            if (isSelected) Modifier.border(2.dp, Color(0xFF64B5F6), RoundedCornerShape(10.dp))
-            else if (!isOccupied) Modifier.border(1.dp, Color(0xFFBDBDBD), RoundedCornerShape(10.dp))
+            if (isSelected) Modifier.border(2.5.dp, Color(0xFF64B5F6), RoundedCornerShape(10.dp))
+            else if (!isOccupied) Modifier.border(1.5.dp, Color(0xFF1565C0), RoundedCornerShape(10.dp))
             else Modifier
         )
             .clickable(onClick = onClick),
