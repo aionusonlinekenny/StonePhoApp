@@ -1,39 +1,29 @@
 <?php
 header('Content-Type: text/plain');
-
-echo "1. START\n";
-
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-echo "2. ini_set OK\n";
+echo "1. Checking existing constants\n";
+echo "   MID defined? " . (defined('MID') ? 'YES = ' . MID : 'NO') . "\n";
+echo "   TOKEN defined? " . (defined('TOKEN') ? 'YES' : 'NO') . "\n";
+echo "   BASE defined? " . (defined('BASE') ? 'YES = ' . BASE : 'NO') . "\n";
+echo "   API_KEY defined? " . (defined('API_KEY') ? 'YES' : 'NO') . "\n";
 
-define('MID2',   'GW3XFCV71AK81');
-define('TOKEN2', 'c30698f2-347e-add6-b758-44285d0e6cac');
-define('BASE2',  'https://api.clover.com/v3/merchants/' . MID2);
+echo "2. Defining constants\n";
+if (!defined('API_KEY')) define('API_KEY', 'StonePhoClover@2024');
+if (!defined('MID'))     define('MID',    'GW3XFCV71AK81');
+if (!defined('TOKEN'))   define('TOKEN',  'c30698f2-347e-add6-b758-44285d0e6cac');
+if (!defined('BASE'))    define('BASE',   'https://api.clover.com/v3/merchants/' . MID);
 
-echo "3. define OK | BASE2=" . BASE2 . "\n";
+echo "   Done | BASE=" . BASE . "\n";
 
-$ch = curl_init('https://api.clover.com/v3/merchants/' . MID2);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-    'Authorization: Bearer ' . TOKEN2,
-    'Accept: application/json'
-));
-curl_setopt($ch, CURLOPT_TIMEOUT, 15);
-curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 8);
+echo "3. GET params\n";
+echo "   action=" . (isset($_GET['action']) ? $_GET['action'] : 'not set') . "\n";
+echo "   key=" . (isset($_GET['key']) ? $_GET['key'] : 'not set') . "\n";
+echo "   key match? " . ((isset($_GET['key']) && $_GET['key'] === 'StonePhoClover@2024') ? 'YES' : 'NO') . "\n";
 
-echo "4. curl init OK\n";
+echo "4. Auth header check\n";
+$h = isset($_SERVER['HTTP_AUTHORIZATION']) ? $_SERVER['HTTP_AUTHORIZATION'] : '(none)';
+echo "   HTTP_AUTHORIZATION=" . $h . "\n";
 
-$body = curl_exec($ch);
-$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-$err  = curl_error($ch);
-curl_close($ch);
-
-echo "5. curl exec done | HTTP=" . $code . " | err=" . $err . "\n";
-echo "6. body (first 200 chars): " . substr(($body ? $body : '(empty)'), 0, 200) . "\n";
-
-$data = json_decode($body, true);
-echo "7. JSON decode OK | merchant_name=" . (isset($data['name']) ? $data['name'] : 'N/A') . "\n";
-
-echo "8. DONE\n";
+echo "5. DONE - all OK\n";
