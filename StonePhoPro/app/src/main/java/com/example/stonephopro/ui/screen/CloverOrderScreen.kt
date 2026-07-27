@@ -226,8 +226,8 @@ fun CloverOrderScreen(onBack: () -> Unit) {
         val occupiedCount = tableOrderMap.size
         Text(
             text = if (isFirstLoad) "Đang tải..."
-                   else if (openOrders.isEmpty()) "Không có order nào đang mở"
-                   else "${openOrders.size} order đang mở · $occupiedCount bàn có khách",
+                   else if (openOrders.isEmpty()) "[BUILD-6] Không có order nào đang mở"
+                   else "[BUILD-6] ${openOrders.size} orders từ server · $occupiedCount bàn xanh",
             fontSize = 11.sp,
             color = Color(0xFF616161),
             modifier = Modifier
