@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -381,41 +382,46 @@ private fun TableCell(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val bgColor = when {
+    val containerColor = when {
         isSelected -> COLOR_SELECTED
         isOccupied -> COLOR_OCCUPIED
-        else       -> COLOR_EMPTY
+        else       -> Color(0xFFFFFFFF)   // force solid white, not theme-dependent
+    }
+    val border = when {
+        isSelected  -> BorderStroke(2.5.dp, Color(0xFF64B5F6))
+        !isOccupied -> BorderStroke(1.5.dp, Color(0xFF1565C0))
+        else        -> null
     }
     val textColor = if (isOccupied || isSelected) Color.White else Color(0xFF1A237E)
 
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(bgColor)
-            .then(
-            if (isSelected) Modifier.border(2.5.dp, Color(0xFF64B5F6), RoundedCornerShape(10.dp))
-            else if (!isOccupied) Modifier.border(1.5.dp, Color(0xFF1565C0), RoundedCornerShape(10.dp))
-            else Modifier
+    Card(
+        onClick    = onClick,
+        modifier   = modifier,
+        shape      = RoundedCornerShape(10.dp),
+        colors     = CardDefaults.cardColors(containerColor = containerColor),
+        border     = border,
+        elevation  = CardDefaults.cardElevation(
+            defaultElevation = if (isOccupied || isSelected) 3.dp else 0.dp
         )
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text("🪑", fontSize = 12.sp)
-            Text(
-                label,
-                color = textColor,
-                fontWeight = FontWeight.Bold,
-                fontSize = if (label.length <= 2) 18.sp else 12.sp
-            )
-            Text(
-                if (isOccupied && total != null) formatCents(total) else "$seats 🪑",
-                color = textColor.copy(alpha = 0.75f),
-                fontSize = 10.sp
-            )
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text("🪑", fontSize = 12.sp)
+                Text(
+                    label,
+                    color = textColor,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = if (label.length <= 2) 18.sp else 12.sp
+                )
+                Text(
+                    if (isOccupied && total != null) formatCents(total) else "$seats 🪑",
+                    color = textColor.copy(alpha = 0.75f),
+                    fontSize = 10.sp
+                )
+            }
         }
     }
 }
