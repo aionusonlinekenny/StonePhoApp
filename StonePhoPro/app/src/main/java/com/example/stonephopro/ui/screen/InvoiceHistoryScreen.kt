@@ -395,7 +395,7 @@ fun InvoiceHistoryScreen(onBack: () -> Unit, permission: String) {
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Column {
-                                            if (invoice.tableTitle.isNotBlank())
+                                            if (!invoice.tableTitle.isNullOrBlank())
                                                 Text("🍽️ Table: ${invoice.tableTitle}", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                                             Text("🧾 ${index + 1}. Order ID: ${invoice.id}", fontWeight = FontWeight.SemiBold)
                                             Text("💵 Total: %.2f$".format(invoice.total), fontSize = 13.sp)
@@ -431,7 +431,7 @@ fun InvoiceHistoryScreen(onBack: () -> Unit, permission: String) {
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column {
-                                        if (invoice.tableTitle.isNotBlank())
+                                        if (!invoice.tableTitle.isNullOrBlank())
                                             Text("🍽️ Table: ${invoice.tableTitle}", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                                         Text("🧾 ${index + 1}. Order ID: ${invoice.id}", fontWeight = FontWeight.SemiBold)
                                         Text("💵 Total: %.2f$".format(invoice.total), fontSize = 13.sp)
@@ -467,7 +467,7 @@ fun InvoiceHistoryScreen(onBack: () -> Unit, permission: String) {
                                                             invoice.discount,
                                                             invoice.tax,
                                                             invoice.total,
-                                                            invoice.tableTitle
+                                                            invoice.tableTitle ?: ""
                                                         )
                                                         val (ip, port) = PrinterConfig.getSelectedIpPort() ?: ("192.168.0.114" to 9100)
                                                         try {

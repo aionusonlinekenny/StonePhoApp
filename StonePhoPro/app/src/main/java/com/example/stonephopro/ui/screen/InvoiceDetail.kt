@@ -79,7 +79,7 @@ fun InvoiceDetail(
 
                 // Invoice meta
                 ReceiptRow("Invoice ID:", invoice.id)
-                if (invoice.tableTitle.isNotBlank())
+                if (!invoice.tableTitle.isNullOrBlank())
                     ReceiptRow("Table:", invoice.tableTitle, labelBold = true, valueBold = true)
                 ReceiptRow("Date:", invoice.date)
                 ReceiptRow("Time:", invoice.time)
