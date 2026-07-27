@@ -10,14 +10,39 @@
  *   https://www.stonephovaldosta.com/loyalteapp/backend/stonepho_clover.php?action=orders&key=StonePhoClover@2024
  */
 
+// ── Bắt lỗi PHP fatal trước khi bất kỳ output nào ───────────────────────────
+ini_set('display_errors', '0');
+ini_set('memory_limit', '256M');
+set_time_limit(60);
+
+register_shutdown_function(function () {
+    $e = error_get_last();
+    if ($e && in_array($e['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
+        if (!headers_sent()) {
+            http_response_code(500);
+            header('Content-Type: application/json; charset=utf-8');
+        }
+        echo json_encode([
+            'error' => 'PHP fatal: ' . $e['message'],
+            'file'  => basename($e['file']),
+            'line'  => $e['line'],
+        ]);
+    }
+});
+
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
+
+// ── Kiểm tra cURL ─────────────────────────────────────────────────────────────
+if (!function_exists('curl_init')) {
+    http_response_code(503);
+    exit(json_encode(['error' => 'cURL extension not available on server']));
+}
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 define('API_KEY', 'StonePhoClover@2024');
 
 function get_sent_key(): string {
-    // Header Authorization (nhiều cách Apache expose)
     $h = $_SERVER['HTTP_AUTHORIZATION']
       ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION']
       ?? '';
@@ -26,7 +51,6 @@ function get_sent_key(): string {
         $h   = $all['Authorization'] ?? $all['authorization'] ?? '';
     }
     $fromHeader = trim(str_replace('Bearer ', '', $h));
-    // Fallback: query param ?key=...  (dùng để test từ browser)
     return $fromHeader ?: ($_GET['key'] ?? '');
 }
 
@@ -45,115 +69,133 @@ function clover(string $path): string {
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . TOKEN, 'Accept: application/json'],
-        CURLOPT_TIMEOUT        => 15,
+        CURLOPT_TIMEOUT        => 20,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_SSL_VERIFYPEER => true,
     ]);
     $body = curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err  = curl_error($ch);
     curl_close($ch);
 
-    if ($err)           { http_response_code(502); exit(json_encode(['error' => $err])); }
+    if ($err || $body === false) {
+        http_response_code(502);
+        exit(json_encode(['error' => 'cURL: ' . ($err ?: 'no response')]));
+    }
     if ($code < 200 || $code >= 300) {
         http_response_code(502);
-        exit(json_encode(['error' => "Clover HTTP $code", 'body' => $body]));
+        exit(json_encode(['error' => "Clover HTTP $code", 'body' => substr($body, 0, 500)]));
     }
     return $body;
 }
 
-// ── Helper: raw Clover call không check HTTP code (để xem lỗi) ───────────────
 function clover_raw(string $path): array {
     $ch = curl_init('https://api.clover.com' . $path);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . TOKEN, 'Accept: application/json'],
-        CURLOPT_TIMEOUT        => 15,
+        CURLOPT_TIMEOUT        => 20,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_SSL_VERIFYPEER => true,
     ]);
     $body = curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err  = curl_error($ch);
     curl_close($ch);
-    return ['code' => $code, 'body' => $body, 'err' => $err];
+    return [
+        'code' => $code,
+        'body' => ($body !== false) ? $body : '',
+        'err'  => $err,
+    ];
 }
 
-// ── Action routing (?action=orders / ping / tables) ───────────────────────────
+// ── Action routing ────────────────────────────────────────────────────────────
 $action = $_GET['action'] ?? 'orders';
 
-switch ($action) {
+try {
 
-    case 'ping':
-        // Ping Clover merchant endpoint để xác nhận token hợp lệ
-        $r = clover_raw('/v3/merchants/' . MID);
-        $merchant = json_decode($r['body'], true);
-        echo json_encode([
-            'ok'        => true,
-            'server'    => 'stonepho_clover.php',
-            'mid'       => MID,
-            'token'     => '...' . substr(TOKEN, -6),
-            'time'      => date('Y-m-d H:i:s T'),
-            'clover_http' => $r['code'],
-            'merchant_name' => $merchant['name'] ?? null,
-            'clover_err'  => $r['err'] ?: null,
-        ]);
-        break;
+    switch ($action) {
 
-    case 'orders':
-        // Clover Dining: dùng atomic_order — chỉ trả orders đang THỰC SỰ mở tại bàn
-        // REST /orders giữ state=locked/OPEN cả ngày dù đã thanh toán → không dùng được
-        $atomic = clover_raw(
-            '/v3/merchants/' . MID
-            . '/atomic_order/orders?limit=100'
-            . '&expand=lineItems%2ClineItems.item%2CorderType'
-        );
-        if (!$atomic['err'] && $atomic['code'] >= 200 && $atomic['code'] < 300) {
-            echo $atomic['body'];
-        } else {
-            // Fallback: REST orders (kém chính xác hơn)
+        case 'ping':
+            $r = clover_raw('/v3/merchants/' . MID);
+            $merchant = json_decode($r['body'], true);
+            echo json_encode([
+                'ok'            => true,
+                'server'        => 'stonepho_clover.php',
+                'mid'           => MID,
+                'token'         => '...' . substr(TOKEN, -6),
+                'time'          => date('Y-m-d H:i:s T'),
+                'clover_http'   => $r['code'],
+                'merchant_name' => $merchant['name'] ?? null,
+                'clover_err'    => $r['err'] ?: null,
+                'php_version'   => PHP_VERSION,
+                'curl_version'  => curl_version()['version'] ?? 'n/a',
+            ]);
+            break;
+
+        case 'orders':
+            // Thử atomic_order trước (chỉ trả orders chưa thanh toán trong Clover Dining)
+            $atomic = clover_raw(
+                '/v3/merchants/' . MID
+                . '/atomic_order/orders?limit=50'
+                . '&expand=lineItems%2ClineItems.item%2CorderType'
+            );
+            if ($atomic['body'] !== '' && $atomic['code'] >= 200 && $atomic['code'] < 300) {
+                echo $atomic['body'];
+            } else {
+                // Fallback: REST orders
+                echo clover(
+                    '/orders?orderBy=createdTime+DESC'
+                    . '&expand=lineItems%2ClineItems.item%2CorderType'
+                    . '&limit=50'
+                );
+            }
+            break;
+
+        case 'rest_orders':
             echo clover(
                 '/orders?orderBy=createdTime+DESC'
                 . '&expand=lineItems%2ClineItems.item%2CorderType'
-                . '&limit=100'
+                . '&limit=30'
             );
-        }
-        break;
+            break;
 
-    case 'rest_orders':
-        // Debug: xem REST orders thô (có thể bao gồm orders đã thanh toán)
-        echo clover(
-            '/orders?orderBy=createdTime+DESC'
-            . '&expand=lineItems%2ClineItems.item%2CorderType'
-            . '&limit=50'
-        );
-        break;
+        case 'debug':
+            echo clover('/orders?orderBy=createdTime+DESC&limit=20');
+            break;
 
-    // Debug: xem raw orders để biết state value + tableLabel field
-    case 'debug':
-        echo clover('/orders?orderBy=createdTime+DESC&limit=20');
-        break;
+        case 'states':
+            $raw   = json_decode(clover('/orders?orderBy=createdTime+DESC&limit=30'), true);
+            $items = array_map(fn($o) => [
+                'id'           => $o['id'] ?? '',
+                'title'        => $o['title'] ?? '',
+                'state'        => $o['state'] ?? '',
+                'paymentState' => $o['paymentState'] ?? '',
+                'total'        => $o['total'] ?? 0,
+            ], $raw['elements'] ?? []);
+            echo json_encode(['count' => count($items), 'orders' => $items]);
+            break;
 
-    // Debug: chỉ xem id, state, paymentState, title của 30 orders gần nhất
-    case 'states':
-        $raw   = json_decode(clover('/orders?orderBy=createdTime+DESC&limit=30'), true);
-        $items = array_map(fn($o) => [
-            'id'           => $o['id'] ?? '',
-            'title'        => $o['title'] ?? '',
-            'state'        => $o['state'] ?? '',
-            'paymentState' => $o['paymentState'] ?? '',
-            'total'        => $o['total'] ?? 0,
-        ], $raw['elements'] ?? []);
-        echo json_encode(['count' => count($items), 'orders' => $items]);
-        break;
+        case 'atomic':
+            $r = clover_raw('/v3/merchants/' . MID . '/atomic_order/orders?limit=20');
+            echo ($r['body'] !== '') ? $r['body'] : json_encode(['error' => $r['err'], 'code' => $r['code']]);
+            break;
 
-    // Thử endpoint khác: atomic pay + atomic orders (Clover Dining dùng system riêng)
-    case 'atomic':
-        $r = clover_raw('/v3/merchants/' . MID . '/atomic_order/orders?limit=20');
-        echo $r['body'] ?: json_encode(['error' => $r['err'], 'code' => $r['code']]);
-        break;
+        case 'tables':
+            echo clover('/tables?limit=200');
+            break;
 
-    case 'tables':
-        echo clover('/tables?limit=200');
-        break;
+        default:
+            http_response_code(404);
+            echo json_encode(['error' => "Unknown action: $action"]);
+    }
 
-    default:
-        http_response_code(404);
-        echo json_encode(['error' => "Unknown action: $action"]);
+} catch (Throwable $t) {
+    http_response_code(500);
+    echo json_encode([
+        'error'   => $t->getMessage(),
+        'type'    => get_class($t),
+        'file'    => basename($t->getFile()),
+        'line'    => $t->getLine(),
+    ]);
 }
