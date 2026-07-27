@@ -226,8 +226,8 @@ fun CloverOrderScreen(onBack: () -> Unit) {
         val occupiedCount = tableOrderMap.size
         Text(
             text = if (isFirstLoad) "Đang tải..."
-                   else if (openOrders.isEmpty()) "[BUILD-7] Không có order nào đang mở"
-                   else "[BUILD-7] ${openOrders.size} orders từ server · $occupiedCount bàn xanh",
+                   else if (openOrders.isEmpty()) "Không có order nào đang mở"
+                   else "${openOrders.size} orders · $occupiedCount bàn có khách",
             fontSize = 11.sp,
             color = Color(0xFF616161),
             modifier = Modifier
@@ -351,7 +351,7 @@ private fun DiningFloorPlan(
                                 label      = slot.name,
                                 seats      = slot.seats,
                                 isOccupied = order != null,
-                                isSelected = selectedOrder?.id == order?.id,
+                                isSelected = order != null && selectedOrder?.id == order.id,
                                 total      = order?.total,
                                 onClick    = { onTableClick(order) },
                                 modifier   = Modifier.size(cellSize)
@@ -377,48 +377,44 @@ private fun TableCell(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val bgColor = when {
+    val bgColor   = when {
         isSelected -> COLOR_SELECTED
         isOccupied -> COLOR_OCCUPIED
-        else       -> Color(0xFFFFFFFF)
+        else       -> Color.White
     }
-    val borderStroke = when {
-        isSelected  -> BorderStroke(2.5.dp, Color(0xFF64B5F6))
-        !isOccupied -> BorderStroke(1.5.dp, Color(0xFF1565C0))
-        else        -> null
-    }
-    val textColor = if (isOccupied || isSelected) Color.White else Color(0xFF1A237E)
+    val textColor = if (isOccupied || isSelected) Color.White else Color(0xFF1565C0)
     val shape     = RoundedCornerShape(10.dp)
 
-    Surface(
-        onClick          = onClick,
-        modifier         = modifier,
-        shape            = shape,
-        color            = bgColor,
-        border           = borderStroke,
-        shadowElevation  = if (isOccupied || isSelected) 2.dp else 0.dp
+    Box(
+        modifier = modifier
+            .background(bgColor, shape)
+            .then(
+                when {
+                    isSelected -> Modifier.border(2.5.dp, Color(0xFF64B5F6), shape)
+                    !isOccupied -> Modifier.border(1.5.dp, Color(0xFF1565C0), shape)
+                    else -> Modifier
+                }
+            )
+            .clip(shape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier         = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text("🪑", fontSize = 12.sp)
-                Text(
-                    label,
-                    color      = textColor,
-                    fontWeight = FontWeight.Bold,
-                    fontSize   = if (label.length <= 2) 18.sp else 12.sp
-                )
-                Text(
-                    if (isOccupied && total != null) formatCents(total) else "$seats 🪑",
-                    color    = textColor.copy(alpha = 0.75f),
-                    fontSize = 10.sp
-                )
-            }
+            Text("🪑", fontSize = 12.sp)
+            Text(
+                label,
+                color      = textColor,
+                fontWeight = FontWeight.Bold,
+                fontSize   = if (label.length <= 2) 18.sp else 12.sp
+            )
+            Text(
+                if (isOccupied && total != null) formatCents(total) else "$seats 🪑",
+                color    = textColor.copy(alpha = 0.85f),
+                fontSize = 10.sp
+            )
         }
     }
 }
