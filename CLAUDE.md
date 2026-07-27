@@ -162,6 +162,37 @@ isSelected = order != null && selectedOrder?.id == order.id
 
 ---
 
+## TableSlot — tách display label và Clover lookup key
+
+```kotlin
+private data class TableSlot(
+    val row: Int,
+    val col: Int,
+    val name: String,               // hiển thị trên cell
+    val seats: Int = 4,
+    val cloverTitle: String = name  // khớp với order.title từ Clover API
+)
+```
+
+**Quy tắc**: Dùng `cloverTitle` để lookup `tableOrderMap`, dùng `name` để hiển thị. Khi tên bàn trong app khác với title trên Clover (ví dụ `"OUTS"` vs `"OUTSIDE"`), khai báo `cloverTitle` riêng:
+
+```kotlin
+TableSlot(1, 5, "OUTS", cloverTitle = "OUTSIDE")
+```
+
+---
+
+## Tính năng Cash Payment — Change Calculator
+
+Khi staff bấm **💵 Cash**, flow là:
+1. Popup change calculator: hiển thị tổng, nhập tiền nhận, tính tiền thối realtime
+2. Nút "Xác nhận & In" chỉ active khi tiền nhận ≥ tổng
+3. In receipt (có dòng Cash received / Change)
+4. Gọi `DELETE /orders/{id}` qua PHP proxy → bàn release trên Clover POS ngay
+5. Dialog kết quả → "OK · Đóng bàn"
+
+---
+
 ## Lịch sử fix quan trọng
 
 | Ngày | Vấn đề | Giải pháp |
@@ -172,3 +203,5 @@ isSelected = order != null && selectedOrder?.id == order.id
 | 2025-07 | Bàn trống màu xám không giống POS | Đổi empty table = nền trắng + viền xanh đậm |
 | 2025-07 | Màn hình giật khi refresh | Tách `isFirstLoad` vs `isRefreshing`; status bar không bao giờ ẩn |
 | 2026-07 | Bàn trống vẫn xanh dù đã force Color.White nhiều cách | Bẫy `null == null → true` trong `isSelected`; fix bằng `order != null && selectedOrder?.id == order.id` |
+| 2026-07 | Bàn OUTS không nhận data dù Clover gửi đúng | Tên slot `"OUTS"` không khớp Clover title `"OUTSIDE"`; dùng `cloverTitle = "OUTSIDE"` |
+| 2026-07 | Cash payment không release bàn trên Clover POS | Thêm `action=delete_order` vào PHP proxy; gọi sau khi in receipt |
