@@ -52,12 +52,12 @@ private val COLOR_SELECTED = Color(0xFF0D47A1)
 private data class TableSlot(val row: Int, val col: Int, val name: String, val seats: Int = 4)
 
 private val DINING_ROOM_LAYOUT = listOf(
-    TableSlot(1, 0, "1"),  TableSlot(1, 1, "2"),  TableSlot(1, 2, "3"),  TableSlot(1, 3, "4"),
+    TableSlot(1, 1, "1"),  TableSlot(1, 2, "2"),  TableSlot(1, 3, "3"),  TableSlot(1, 4, "4"),
     TableSlot(1, 5, "OUTS"),
-    TableSlot(2, 1, "5"),  TableSlot(2, 2, "6"),  TableSlot(2, 3, "7"),
-    TableSlot(3, 0, "8"),  TableSlot(3, 1, "9"),  TableSlot(3, 2, "10"), TableSlot(3, 3, "11"),
-    TableSlot(4, 0, "12"), TableSlot(4, 1, "13"), TableSlot(4, 2, "14"), TableSlot(4, 3, "15"),
-    TableSlot(5, 0, "16"), TableSlot(5, 1, "17"), TableSlot(5, 2, "18"),
+    TableSlot(2, 2, "5"),  TableSlot(2, 3, "6"),  TableSlot(2, 4, "7"),
+    TableSlot(3, 1, "8"),  TableSlot(3, 2, "9"),  TableSlot(3, 3, "10"), TableSlot(3, 4, "11"),
+    TableSlot(4, 1, "12"), TableSlot(4, 2, "13"), TableSlot(4, 3, "14"), TableSlot(4, 4, "15"),
+    TableSlot(5, 1, "16"), TableSlot(5, 2, "17"), TableSlot(5, 3, "18"),
 )
 private const val GRID_ROWS = 6
 private const val GRID_COLS = 6
