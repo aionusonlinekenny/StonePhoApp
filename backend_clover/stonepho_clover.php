@@ -5,7 +5,7 @@ error_reporting(E_ALL);
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 
-define('SCRIPT_VER', 'v20250727c');
+define('SCRIPT_VER', 'v20260727a');
 define('API_KEY',    'StonePhoClover@2024');
 define('MID',        'GW3XFCV71AK81');
 define('TOKEN',      'c30698f2-347e-add6-b758-44285d0e6cac');
@@ -185,6 +185,39 @@ switch ($action) {
 
     case 'tables':
         die(clover('/tables?limit=200'));
+
+    case 'delete_order':
+        $orderId = isset($_GET['order_id']) ? trim($_GET['order_id']) : '';
+        if ($orderId === '') {
+            http_response_code(400);
+            die(json_encode(array('error' => 'Missing order_id', 'ver' => SCRIPT_VER)));
+        }
+        $ch = curl_init(BASE . '/orders/' . rawurlencode($orderId));
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+            'Authorization: Bearer ' . TOKEN,
+            'Accept: application/json'
+        ));
+        curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+        $delBody = curl_exec($ch);
+        $delCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $delErr  = curl_error($ch);
+        curl_close($ch);
+        if ($delErr) {
+            http_response_code(502);
+            die(json_encode(array('error' => 'curl: ' . $delErr, 'ver' => SCRIPT_VER)));
+        }
+        if ($delCode >= 200 && $delCode < 300) {
+            die(json_encode(array('ok' => true, 'deleted' => $orderId, 'ver' => SCRIPT_VER)));
+        }
+        http_response_code(502);
+        die(json_encode(array(
+            'error'  => 'Clover DELETE HTTP ' . $delCode,
+            'detail' => substr($delBody, 0, 300),
+            'ver'    => SCRIPT_VER
+        )));
 
     default:
         http_response_code(404);

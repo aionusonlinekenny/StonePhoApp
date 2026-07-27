@@ -48,6 +48,22 @@ object CloverRepository {
         }
     }
 
+    private fun httpGet(urlStr: String, token: String, method: String = "GET"): Pair<Int, String> {
+        val conn = URL(urlStr).openConnection() as HttpURLConnection
+        conn.requestMethod = method
+        conn.setRequestProperty("Authorization", "Bearer $token")
+        conn.setRequestProperty("Accept", "application/json")
+        conn.connectTimeout = 10_000
+        conn.readTimeout    = 15_000
+        return try {
+            val code = conn.responseCode
+            val body = if (code in 200..299) conn.inputStream.bufferedReader().readText() else ""
+            Pair(code, body)
+        } finally {
+            conn.disconnect()
+        }
+    }
+
     // ── Chế độ PROXY: gọi qua stonephovaldosta.com/loyalteapp/backend ──────────
     // Token ở đây là auth token của LoyalteApp (không phải Clover token)
     suspend fun fetchOpenOrdersViaProxy(
@@ -57,6 +73,17 @@ object CloverRepository {
             val url = "${CloverConfig.PROXY_URL}?action=orders"
             val json = get(url, proxyToken)
             gson.fromJson(json, CloverOrdersResponse::class.java).elements.orEmpty()
+        }
+    }
+
+    suspend fun deleteOrderViaProxy(
+        proxyToken: String,
+        orderId: String
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = "${CloverConfig.PROXY_URL}?action=delete_order&order_id=${orderId}"
+            val (code, _) = httpGet(url, proxyToken)
+            if (code !in 200..299) error("Proxy DELETE HTTP $code")
         }
     }
 

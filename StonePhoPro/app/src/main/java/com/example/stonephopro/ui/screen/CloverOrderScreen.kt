@@ -607,12 +607,22 @@ private fun OrderDetailPanel(
                                 time       = timeNow
                             )
                             val (ip, port) = PrinterConfig.getSelectedIpPort() ?: ("192.168.0.114" to 9100)
-                            payResult = try {
+                            val printMsg = try {
                                 SocketPrinter.printText(ip, port, receiptText)
                                 "✅ In thành công · Hóa đơn $invoiceId"
                             } catch (e: Exception) {
                                 "⚠️ Đã lưu hóa đơn $invoiceId\n❌ Lỗi máy in: ${e.message}"
                             }
+
+                            // Xoá order trên Clover để POS tự release bàn
+                            val deleteMsg = CloverRepository.deleteOrderViaProxy(
+                                CloverConfig.PROXY_SECRET, order.id
+                            ).fold(
+                                onSuccess = { "✅ Đã release bàn ${order.title} trên Clover POS" },
+                                onFailure = { "⚠️ Không thể xoá order Clover: ${it.message}" }
+                            )
+
+                            payResult = "$printMsg\n$deleteMsg"
                             showPayDialog = true
                         }
                     },
