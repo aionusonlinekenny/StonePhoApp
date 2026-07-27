@@ -89,21 +89,21 @@ switch ($action) {
         $r = clover_call(
             'https://api.clover.com/v3/merchants/' . MID
             . '/atomic_order/orders?limit=50'
-            . '&expand=lineItems%2ClineItems.item%2CorderType'
+            . '&expand=lineItems%2ClineItems.item%2CorderType%2Cpayments'
         );
         if ($r['body'] !== '' && $r['code'] >= 200 && $r['code'] < 300) {
             die($r['body']);
         }
         die(clover(
             '/orders?orderBy=createdTime+DESC'
-            . '&expand=lineItems%2ClineItems.item%2CorderType'
+            . '&expand=lineItems%2ClineItems.item%2CorderType%2Cpayments'
             . '&limit=50'
         ));
 
     case 'rest_orders':
         die(clover(
             '/orders?orderBy=createdTime+DESC'
-            . '&expand=lineItems%2ClineItems.item%2CorderType'
+            . '&expand=lineItems%2ClineItems.item%2CorderType%2Cpayments'
             . '&limit=30'
         ));
 

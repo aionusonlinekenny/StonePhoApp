@@ -15,7 +15,16 @@ data class CloverOrder(
     val tableLabel: String? = null,
     val orderType: CloverOrderTypeRef? = null,
     @SerializedName("createdTime") val createdTime: Long = 0,
-    val lineItems: CloverLineItemsWrapper? = null
+    val lineItems: CloverLineItemsWrapper? = null,
+    val payments: CloverPaymentsWrapper? = null
+)
+
+data class CloverPaymentsWrapper(
+    val elements: List<CloverPaymentRef> = emptyList()
+)
+
+data class CloverPaymentRef(
+    val id: String = ""
 )
 
 data class CloverOrderTypeRef(

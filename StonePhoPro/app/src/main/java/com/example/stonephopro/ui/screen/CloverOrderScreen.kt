@@ -127,10 +127,16 @@ fun CloverOrderScreen(onBack: () -> Unit) {
         val eightHoursAgo = System.currentTimeMillis() - (8L * 60 * 60 * 1000)
         return orders
             .filter { o ->
-                val closeTime = closedTables[o.title.trim()]
+                val closeTime     = closedTables[o.title.trim()]
+                val hasPaid       = (o.payments?.elements?.size ?: 0) > 0
+                val stateIsClosed = o.state.lowercase() in setOf("deleted", "closed")
+                // Exclude: paid via card on POS (has payment record)
+                // Exclude: state is explicitly closed/deleted
+                // Exclude: older than 8 hours
+                // Exclude: manually closed via app and no newer seating since
+                !hasPaid &&
+                !stateIsClosed &&
                 o.createdTime >= eightHoursAgo &&
-                o.state.lowercase() !in setOf("deleted", "closed") &&
-                // Allow if not closed, OR if new seating started after close time
                 (closeTime == null || o.createdTime > closeTime)
             }
             .groupBy { it.title.trim() }
