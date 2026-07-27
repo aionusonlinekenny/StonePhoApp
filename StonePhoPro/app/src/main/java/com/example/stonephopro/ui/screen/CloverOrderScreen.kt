@@ -327,11 +327,8 @@ private fun DiningFloorPlan(
     val slotMap = remember { DINING_ROOM_LAYOUT.associateBy { Pair(it.row, it.col) } }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color.White).padding(8.dp)) {
-        // Use 85% of available space for cells; remainder becomes natural gap
         val totalGapH = maxWidth  * 0.15f
         val totalGapV = maxHeight * 0.15f
-        val gapH      = totalGapH / (GRID_COLS - 1)
-        val gapV      = totalGapV / (GRID_ROWS - 1)
         val cellSize  = minOf(
             (maxWidth  - totalGapH) / GRID_COLS,
             (maxHeight - totalGapV) / GRID_ROWS
