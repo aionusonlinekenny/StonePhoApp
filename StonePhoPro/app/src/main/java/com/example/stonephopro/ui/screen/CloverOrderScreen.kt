@@ -41,7 +41,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 private val COLOR_OCCUPIED = Color(0xFF1565C0)
-private val COLOR_EMPTY    = Color(0xFFD0D0D0)
+private val COLOR_EMPTY    = Color.White
 private val COLOR_SELECTED = Color(0xFF0D47A1)
 
 private data class TableSlot(val row: Int, val col: Int, val name: String, val seats: Int = 4)
@@ -376,7 +376,11 @@ private fun TableCell(
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
             .background(bgColor)
-            .then(if (isSelected) Modifier.border(2.dp, Color(0xFF64B5F6), RoundedCornerShape(10.dp)) else Modifier)
+            .then(
+            if (isSelected) Modifier.border(2.dp, Color(0xFF64B5F6), RoundedCornerShape(10.dp))
+            else if (!isOccupied) Modifier.border(1.dp, Color(0xFFBDBDBD), RoundedCornerShape(10.dp))
+            else Modifier
+        )
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
