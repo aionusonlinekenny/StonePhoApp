@@ -203,6 +203,21 @@ fun CloverOrderScreen(onBack: () -> Unit) {
                         color = Color.White, fontSize = 11.sp
                     )
                 }
+                if (!isFirstLoad && errorMsg.isEmpty()) {
+                    val liveTotal = openOrders.sumOf { it.total }
+                    Box(
+                        modifier = Modifier
+                            .background(Color(0xFF1565C0), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 10.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            "💵 Total: ${formatCents(liveTotal)}",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 IconButton(onClick = { reload() }) {
