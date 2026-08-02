@@ -96,13 +96,14 @@ fun CloverOrderScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
 
-    var openOrders    by remember { mutableStateOf<List<CloverOrder>>(emptyList()) }
-    var isFirstLoad   by remember { mutableStateOf(true) }
-    var isRefreshing  by remember { mutableStateOf(false) }
-    var errorMsg      by remember { mutableStateOf("") }
-    var selectedOrder by remember { mutableStateOf<CloverOrder?>(null) }
-    var selectedTab   by remember { mutableStateOf(0) }
-    var closedTables  by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
+    var openOrders      by remember { mutableStateOf<List<CloverOrder>>(emptyList()) }
+    var isFirstLoad     by remember { mutableStateOf(true) }
+    var isRefreshing    by remember { mutableStateOf(false) }
+    var errorMsg        by remember { mutableStateOf("") }
+    var selectedOrder   by remember { mutableStateOf<CloverOrder?>(null) }
+    var selectedTab     by remember { mutableStateOf(0) }
+    var closedTables    by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
+    var todayCashTotal  by remember { mutableStateOf(0.0) }
 
     // Load locally closed tables from SharedPreferences on start
     LaunchedEffect(Unit) {
@@ -159,6 +160,9 @@ fun CloverOrderScreen(onBack: () -> Unit) {
                 .onFailure { err ->
                     if (isFirstLoad) errorMsg = "Lỗi backend: ${err.message}"
                 }
+            // Tổng cash đã thu hôm nay từ InvoiceStorage (giống Invoice Check)
+            val today = InvoiceStorage.getTodayDate()
+            todayCashTotal = InvoiceStorage.loadInvoices(context, today).sumOf { it.total }
             isFirstLoad  = false
             isRefreshing = false
         }
@@ -203,15 +207,14 @@ fun CloverOrderScreen(onBack: () -> Unit) {
                         color = Color.White, fontSize = 11.sp
                     )
                 }
-                if (!isFirstLoad && errorMsg.isEmpty()) {
-                    val liveTotal = openOrders.sumOf { it.total }
+                if (!isFirstLoad) {
                     Box(
                         modifier = Modifier
                             .background(Color(0xFF1565C0), RoundedCornerShape(12.dp))
                             .padding(horizontal = 10.dp, vertical = 3.dp)
                     ) {
                         Text(
-                            "💵 Total: ${formatCents(liveTotal)}",
+                            "💵 Cash hôm nay: ${"$%,.2f".format(todayCashTotal)}",
                             color = Color.White,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
