@@ -38,6 +38,7 @@ fun OrderScreen(viewModel: OrderViewModel) {
     var showSettings by remember { mutableStateOf(false) }
     var showManageMenu by remember { mutableStateOf(false) }
     var showInvoiceScreen by remember { mutableStateOf(false) }
+    var showWeeklyScreen by remember { mutableStateOf(false) }
     var showInvoicePasswordDialog by remember { mutableStateOf(false) }
     var invoicePermission by remember { mutableStateOf("user") }
     var showExitDialog by remember { mutableStateOf(false) }
@@ -78,6 +79,9 @@ fun OrderScreen(viewModel: OrderViewModel) {
             when {
                 showSettings -> PrinterSettingsScreen(onBack = { showSettings = false })
                 showManageMenu -> ManageMenuScreen(viewModel = viewModel, onBack = { showManageMenu = false })
+                showWeeklyScreen -> WeeklyIncomeScreen(
+                    onBack = { showWeeklyScreen = false }
+                )
                 showInvoiceScreen -> InvoiceHistoryScreen(
                     onBack = { showInvoiceScreen = false },
                     permission = invoicePermission
@@ -165,8 +169,11 @@ fun OrderScreen(viewModel: OrderViewModel) {
                         Button3D(
                             text = "✔ OK",
                             onClick = {
-                                invoicePermission = if (password == "0815") "admin" else "user"
-                                showInvoiceScreen = true
+                                when (password) {
+                                    "0815" -> { invoicePermission = "admin"; showInvoiceScreen = true }
+                                    "1209" -> { showWeeklyScreen = true }
+                                    else   -> { invoicePermission = "user"; showInvoiceScreen = true }
+                                }
                                 showInvoicePasswordDialog = false
                             },
                             gradientColors = listOf(Color(0xFF4CAF50), Color(0xFF2E7D32)), // Gradient xanh lá
