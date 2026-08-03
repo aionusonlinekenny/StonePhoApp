@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -22,11 +21,14 @@ import com.example.stonephopro.components.Button3D
 import com.example.stonephopro.utils.InvoiceStorage
 import com.example.stonephopro.utils.PrinterConfig
 import com.example.stonephopro.utils.SocketPrinter
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
 
-private const val WEEKLY_PREFS   = "weekly_income"
+// ── SharedPreferences helpers ────────────────────────────────────────────────
+private const val WEEKLY_PREFS    = "weekly_income"
 private const val OVERRIDE_PREFIX = "override_"
 
 private fun loadOverride(ctx: Context, date: String): Double? {
@@ -46,55 +48,87 @@ private fun clearOverride(ctx: Context, date: String) {
 }
 
 private data class DaySummary(
-    val date: String,       // "MM-dd-yyyy"
-    val label: String,      // "Mon 08/04"
-    val autoTotal: Double,  // tổng từ InvoiceStorage
-    val override: Double?   // giá trị tay, null = dùng autoTotal
+    val date: String,
+    val label: String,
+    val autoTotal: Double,
+    val override: Double?
 ) {
     val effective: Double get() = override ?: autoTotal
 }
 
+// ── Tính 7 ngày của tuần (weekOffset=0 = tuần hiện tại, -1 = tuần trước) ────
+private fun buildWeekDates(weekOffset: Int): List<Pair<String, String>> {
+    val fmtKey = SimpleDateFormat("MM-dd-yyyy", Locale.US)
+    val fmtDay = SimpleDateFormat("EEE MM/dd", Locale.US)
+    val cal    = Calendar.getInstance()
+    // Về thứ Hai của tuần hiện tại
+    while (cal.get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) {
+        cal.add(Calendar.DAY_OF_MONTH, -1)
+    }
+    // Dịch theo offset tuần
+    cal.add(Calendar.WEEK_OF_YEAR, weekOffset)
+    return List(7) {
+        val key   = fmtKey.format(cal.time)
+        val label = fmtDay.format(cal.time)
+        cal.add(Calendar.DAY_OF_MONTH, 1)
+        key to label
+    }
+}
+
+private fun weekRangeLabel(weekOffset: Int): String {
+    val fmt = SimpleDateFormat("MM/dd/yyyy", Locale.US)
+    val cal = Calendar.getInstance()
+    while (cal.get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) {
+        cal.add(Calendar.DAY_OF_MONTH, -1)
+    }
+    cal.add(Calendar.WEEK_OF_YEAR, weekOffset)
+    val start = fmt.format(cal.time)
+    cal.add(Calendar.DAY_OF_MONTH, 6)
+    val end = fmt.format(cal.time)
+    return "$start – $end"
+}
+
+// ── Screen ───────────────────────────────────────────────────────────────────
 @Composable
 fun WeeklyIncomeScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
 
-    val fmtKey = remember { SimpleDateFormat("MM-dd-yyyy", Locale.US) }
-    val fmtDay = remember { SimpleDateFormat("EEE MM/dd", Locale.US) }
-
-    // Tính ngày thứ Hai của tuần hiện tại
-    val weekDates = remember {
-        val cal = Calendar.getInstance()
-        while (cal.get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) {
-            cal.add(Calendar.DAY_OF_MONTH, -1)
-        }
-        List(7) {
-            val key   = fmtKey.format(cal.time)
-            val label = fmtDay.format(cal.time)
-            cal.add(Calendar.DAY_OF_MONTH, 1)
-            key to label
-        }
-    }
-
+    var weekOffset   by remember { mutableStateOf(0) }
     var days         by remember { mutableStateOf<List<DaySummary>>(emptyList()) }
     var editingDate  by remember { mutableStateOf<String?>(null) }
     var editValue    by remember { mutableStateOf("") }
     var printResult  by remember { mutableStateOf("") }
     var showPrint    by remember { mutableStateOf(false) }
+    var isLoading    by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        days = weekDates.map { (date, label) ->
-            val auto = InvoiceStorage.loadInvoices(context, date).sumOf { it.total }
-            DaySummary(date = date, label = label, autoTotal = auto, override = loadOverride(context, date))
+    val today = InvoiceStorage.getTodayDate()
+
+    // Reload khi đổi tuần
+    LaunchedEffect(weekOffset) {
+        isLoading = true
+        editingDate = null
+        val weekDates = buildWeekDates(weekOffset)
+        val loaded = withContext(Dispatchers.IO) {
+            weekDates.map { (date, label) ->
+                val auto = InvoiceStorage.loadInvoices(context, date).sumOf { it.total }
+                DaySummary(
+                    date      = date,
+                    label     = label,
+                    autoTotal = auto,
+                    override  = loadOverride(context, date)
+                )
+            }
         }
+        days      = loaded
+        isLoading = false
     }
 
     val weekTotal = days.sumOf { it.effective }
-    val today     = InvoiceStorage.getTodayDate()
 
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF5F5F5))) {
 
-        // ── Header ──────────────────────────────────────────────────────────
+        // ── Header ────────────────────────────────────────────────────────
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -103,9 +137,21 @@ fun WeeklyIncomeScreen(onBack: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 Text("📊", fontSize = 20.sp)
-                Text("Tổng Thu Nhập Tuần", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Column {
+                    Text(
+                        "Tổng Thu Nhập Tuần",
+                        color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp
+                    )
+                    Text(
+                        weekRangeLabel(weekOffset),
+                        color = Color.White.copy(alpha = 0.75f), fontSize = 11.sp
+                    )
+                }
             }
             Button3D(
                 text = "✕ Đóng",
@@ -115,20 +161,55 @@ fun WeeklyIncomeScreen(onBack: () -> Unit) {
             )
         }
 
-        // ── Tổng tuần ────────────────────────────────────────────────────────
+        // ── Điều hướng tuần ───────────────────────────────────────────────
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF283593))
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = { weekOffset-- }) {
+                Text("◀ Tuần trước", color = Color.White, fontSize = 13.sp)
+            }
+            Text(
+                if (weekOffset == 0) "Tuần này" else if (weekOffset == -1) "Tuần trước" else "${-weekOffset} tuần trước",
+                color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp
+            )
+            TextButton(
+                onClick = { weekOffset++ },
+                enabled = weekOffset < 0
+            ) {
+                Text(
+                    "Tuần sau ▶",
+                    color = if (weekOffset < 0) Color.White else Color.White.copy(alpha = 0.3f),
+                    fontSize = 13.sp
+                )
+            }
+        }
+
+        // ── Banner tổng tuần ──────────────────────────────────────────────
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color(0xFF1565C0))
-                .padding(horizontal = 20.dp, vertical = 14.dp),
+                .padding(horizontal = 20.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("💵 TỔNG TUẦN", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            Text("$%,.2f".format(weekTotal), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 28.sp)
+            Text("💵 TỔNG TUẦN", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            if (isLoading) {
+                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            } else {
+                Text(
+                    "$%,.2f".format(weekTotal),
+                    color = Color.White, fontWeight = FontWeight.Bold, fontSize = 26.sp
+                )
+            }
         }
 
-        // ── Header cột ───────────────────────────────────────────────────────
+        // ── Header cột ────────────────────────────────────────────────────
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -136,13 +217,13 @@ fun WeeklyIncomeScreen(onBack: () -> Unit) {
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             Text("Ngày",        modifier = Modifier.weight(1.3f), fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Medium)
-            Text("Hóa đơn",    modifier = Modifier.weight(1f),   fontSize = 12.sp, color = Color.Gray, textAlign = TextAlign.End, fontWeight = FontWeight.Medium)
-            Text("Điều chỉnh", modifier = Modifier.weight(1.2f), fontSize = 12.sp, color = Color.Gray, textAlign = TextAlign.Center, fontWeight = FontWeight.Medium)
+            Text("Hóa đơn",    modifier = Modifier.weight(1f),   fontSize = 12.sp, color = Color.Gray, textAlign = TextAlign.End)
+            Text("Điều chỉnh", modifier = Modifier.weight(1.2f), fontSize = 12.sp, color = Color.Gray, textAlign = TextAlign.Center)
             Text("Thực tế",    modifier = Modifier.weight(1f),   fontSize = 12.sp, color = Color.Gray, textAlign = TextAlign.End, fontWeight = FontWeight.Bold)
         }
         HorizontalDivider()
 
-        // ── Danh sách ngày ───────────────────────────────────────────────────
+        // ── Danh sách ngày ────────────────────────────────────────────────
         LazyColumn(modifier = Modifier.weight(1f)) {
             items(days, key = { it.date }) { day ->
                 val isToday     = day.date == today
@@ -163,34 +244,31 @@ fun WeeklyIncomeScreen(onBack: () -> Unit) {
                             fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
                             fontSize = 14.sp
                         )
-                        if (isToday)
-                            Text("hôm nay", fontSize = 10.sp, color = Color(0xFFE65100))
+                        if (isToday) Text("hôm nay", fontSize = 10.sp, color = Color(0xFFE65100))
                     }
 
                     // Tổng hóa đơn (auto)
                     Text(
                         if (day.autoTotal > 0) "$%,.2f".format(day.autoTotal) else "—",
-                        modifier = Modifier.weight(1f),
-                        fontSize = 13.sp,
-                        textAlign = TextAlign.End,
-                        color = if (hasOverride) Color(0xFFBDBDBD) else Color(0xFF1565C0)
+                        modifier   = Modifier.weight(1f),
+                        fontSize   = 13.sp,
+                        textAlign  = TextAlign.End,
+                        color      = if (hasOverride) Color(0xFFBDBDBD) else Color(0xFF1565C0)
                     )
 
-                    // Cột điều chỉnh
+                    // Điều chỉnh
                     Box(modifier = Modifier.weight(1.2f), contentAlignment = Alignment.Center) {
                         if (isEditing) {
                             OutlinedTextField(
-                                value = editValue,
+                                value         = editValue,
                                 onValueChange = { v ->
                                     if (v.isEmpty() || v.matches(Regex("^\\d{0,7}(\\.\\d{0,2})?$")))
                                         editValue = v
                                 },
-                                singleLine = true,
+                                singleLine    = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                modifier = Modifier.width(100.dp),
-                                textStyle = LocalTextStyle.current.copy(
-                                    fontSize = 13.sp, textAlign = TextAlign.End
-                                )
+                                modifier      = Modifier.width(100.dp),
+                                textStyle     = LocalTextStyle.current.copy(fontSize = 13.sp, textAlign = TextAlign.End)
                             )
                         } else {
                             TextButton(onClick = {
@@ -200,7 +278,7 @@ fun WeeklyIncomeScreen(onBack: () -> Unit) {
                                 Text(
                                     if (hasOverride) "$%,.2f".format(day.override!!) else "✏️ Sửa",
                                     fontSize = if (hasOverride) 12.sp else 11.sp,
-                                    color = if (hasOverride) Color(0xFFE65100) else Color.Gray
+                                    color    = if (hasOverride) Color(0xFFE65100) else Color.Gray
                                 )
                             }
                         }
@@ -209,24 +287,21 @@ fun WeeklyIncomeScreen(onBack: () -> Unit) {
                     // Thực tế
                     Text(
                         if (day.effective > 0) "$%,.2f".format(day.effective) else "—",
-                        modifier = Modifier.weight(1f),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.End,
-                        color = Color(0xFF2E7D32)
+                        modifier     = Modifier.weight(1f),
+                        fontSize     = 14.sp,
+                        fontWeight   = FontWeight.Bold,
+                        textAlign    = TextAlign.End,
+                        color        = if (day.effective > 0) Color(0xFF2E7D32) else Color.LightGray
                     )
                 }
                 HorizontalDivider(color = Color(0xFFEEEEEE))
             }
         }
 
-        // ── Action buttons ───────────────────────────────────────────────────
+        // ── Buttons ───────────────────────────────────────────────────────
         if (editingDate != null) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color.White)
-                    .padding(12.dp),
+                modifier = Modifier.fillMaxWidth().background(Color.White).padding(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Button3D(
@@ -236,7 +311,7 @@ fun WeeklyIncomeScreen(onBack: () -> Unit) {
                     modifier = Modifier.weight(1f).height(44.dp), fontSize = 13.sp
                 )
                 Button3D(
-                    text = "🗑 Xóa điều chỉnh",
+                    text = "🗑 Xóa chỉnh",
                     onClick = {
                         val d = editingDate!!
                         clearOverride(context, d)
@@ -244,7 +319,7 @@ fun WeeklyIncomeScreen(onBack: () -> Unit) {
                         editingDate = null; editValue = ""
                     },
                     gradientColors = listOf(Color(0xFFEF5350), Color(0xFFC62828)),
-                    modifier = Modifier.weight(1.5f).height(44.dp), fontSize = 12.sp
+                    modifier = Modifier.weight(1.4f).height(44.dp), fontSize = 12.sp
                 )
                 Button3D(
                     text = "✔ Lưu",
@@ -263,11 +338,7 @@ fun WeeklyIncomeScreen(onBack: () -> Unit) {
             }
         } else {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color.White)
-                    .padding(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxWidth().background(Color.White).padding(12.dp)
             ) {
                 Button3D(
                     text = "🖨️ In tổng tuần",
@@ -275,12 +346,13 @@ fun WeeklyIncomeScreen(onBack: () -> Unit) {
                         scope.launch {
                             val sb = StringBuilder()
                             sb.appendLine("        STONE PHO — WEEKLY CASH INCOME")
+                            sb.appendLine("  ${weekRangeLabel(weekOffset)}")
                             sb.appendLine("------------------------------------------------")
                             days.forEach { d ->
-                                val label = d.label.padEnd(14)
-                                val amt   = "$%,.2f".format(d.effective)
-                                val mark  = if (d.override != null) "*" else " "
-                                sb.appendLine("$mark $label $amt")
+                                val lbl  = d.label.padEnd(14)
+                                val amt  = "$%,.2f".format(d.effective)
+                                val mark = if (d.override != null) "*" else " "
+                                sb.appendLine("$mark $lbl $amt")
                             }
                             sb.appendLine("------------------------------------------------")
                             sb.appendLine("TOTAL:           ${"$%,.2f".format(weekTotal)}")
@@ -307,7 +379,7 @@ fun WeeklyIncomeScreen(onBack: () -> Unit) {
     if (showPrint) {
         AlertDialog(
             onDismissRequest = { showPrint = false },
-            confirmButton = { TextButton(onClick = { showPrint = false }) { Text("OK") } },
+            confirmButton    = { TextButton(onClick = { showPrint = false }) { Text("OK") } },
             title = { Text("In tổng tuần") },
             text  = { Text(printResult) }
         )
