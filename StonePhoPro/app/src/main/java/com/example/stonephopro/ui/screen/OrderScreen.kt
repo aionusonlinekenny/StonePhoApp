@@ -6,16 +6,19 @@ import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.window.Dialog
 import com.example.stonephopro.viewmodel.OrderViewModel
@@ -130,55 +133,99 @@ fun OrderScreen(viewModel: OrderViewModel) {
 
         Dialog(onDismissRequest = { showInvoicePasswordDialog = false }) {
             Surface(
-                shape = MaterialTheme.shapes.medium,
+                shape = RoundedCornerShape(16.dp),
                 tonalElevation = 8.dp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp)
+                modifier = Modifier.width(320.dp)
             ) {
-                Column(modifier = Modifier.padding(24.dp)) {
-                    Text("🔐 Nhập mật khẩu", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "👉 Nhập bất kỳ để đăng nhập với quyền xem. Liên hệ Kenny để có quyền quản trị.",
-                        fontSize = 16.sp,
-                        color = Color.Gray
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = { Text("Mật khẩu") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(20.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("🔐 Nhập mật khẩu", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // PIN display
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.5.dp, Color(0xFF1565C0), RoundedCornerShape(8.dp))
+                            .background(Color(0xFFF5F5F5), RoundedCornerShape(8.dp))
+                            .padding(vertical = 14.dp, horizontal = 16.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Button3D(
-                            text = "❌ Hủy",
-                            onClick = {
-                                showInvoicePasswordDialog = false
-                            },
-                            gradientColors = listOf(Color(0xFFE57373), Color(0xFFD32F2F)), // Gradient đỏ
-                            fontSize = 16.sp
+                        Text(
+                            text = "•".repeat(password.length).ifEmpty { " " },
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1A237E),
+                            textAlign = TextAlign.Center,
+                            letterSpacing = 8.sp
                         )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Button3D(
-                            text = "✔ OK",
-                            onClick = {
-                                when (password) {
-                                    "0815" -> { invoicePermission = "admin"; showInvoiceScreen = true }
-                                    "1209" -> { showWeeklyScreen = true }
-                                    else   -> { invoicePermission = "user"; showInvoiceScreen = true }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Numpad
+                    val keys = listOf("1","2","3","4","5","6","7","8","9","⌫","0","✓")
+                    val keyColors = mapOf(
+                        "⌫" to Pair(Color(0xFFEF5350), Color(0xFFC62828)),
+                        "✓" to Pair(Color(0xFF43A047), Color(0xFF1B5E20))
+                    )
+
+                    for (row in keys.chunked(3)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            for (key in row) {
+                                val (g1, g2) = keyColors[key] ?: Pair(Color(0xFF1565C0), Color(0xFF0D47A1))
+                                Button(
+                                    onClick = {
+                                        when (key) {
+                                            "⌫" -> if (password.isNotEmpty()) password = password.dropLast(1)
+                                            "✓" -> {
+                                                when (password) {
+                                                    "0815" -> { invoicePermission = "admin"; showInvoiceScreen = true }
+                                                    "1209" -> { showWeeklyScreen = true }
+                                                    else   -> { invoicePermission = "user"; showInvoiceScreen = true }
+                                                }
+                                                showInvoicePasswordDialog = false
+                                                password = ""
+                                            }
+                                            else -> if (password.length < 6) password += key
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(54.dp)
+                                        .padding(vertical = 3.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                                    contentPadding = PaddingValues(0.dp),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(
+                                                Brush.verticalGradient(listOf(g1, g2)),
+                                                RoundedCornerShape(8.dp)
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(key, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    }
                                 }
-                                showInvoicePasswordDialog = false
-                            },
-                            gradientColors = listOf(Color(0xFF4CAF50), Color(0xFF2E7D32)), // Gradient xanh lá
-                            fontSize = 16.sp
-                        )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(0.dp))
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    TextButton(
+                        onClick = { showInvoicePasswordDialog = false; password = "" },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Hủy", color = Color.Gray, fontSize = 14.sp)
                     }
                 }
             }
