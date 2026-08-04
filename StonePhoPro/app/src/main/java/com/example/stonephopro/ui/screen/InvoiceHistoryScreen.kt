@@ -252,7 +252,7 @@ fun InvoiceHistoryScreen(onBack: () -> Unit, permission: String) {
                     Button3D(
                         text = "🖨️ In thống kê",
                         onClick = {
-                            val summary = buildInvoiceSummaryText(viewMode, invoices)
+                            val summary = buildInvoiceSummaryText(context, viewMode, invoices, selectedDate)
                             PrinterConfig.getSelectedIpPort()?.let { (ip, port) ->
                                 SocketPrinter.printText(ip, port, summary)
                             }
@@ -649,30 +649,36 @@ fun MaterialDatePicker(
     )
 }
 
-fun buildInvoiceSummaryText(viewMode: ViewMode, invoices: List<Invoice>): String {
+fun buildInvoiceSummaryText(
+    ctx: Context,
+    viewMode: ViewMode,
+    invoices: List<Invoice>,
+    selectedDate: String = ""
+): String {
     val sb = StringBuilder()
     sb.appendLine("         STONE PHO - Invoice Summary")
     sb.appendLine("==========================================")
 
     when (viewMode) {
         ViewMode.BY_DAY -> {
+            val dayTotal = loadDailyOverride(ctx, selectedDate) ?: invoices.sumOf { it.total }
             invoices.forEach {
                 sb.appendLine("Invoice ID: ${it.id.take(10)}     Total: ${"%.2f".format(it.total)}$")
             }
+            sb.appendLine("------------------------------------------")
+            sb.appendLine("TOTAL: ${"%.2f".format(dayTotal)}$")
         }
 
         ViewMode.BY_MONTH, ViewMode.CUSTOM -> {
             val grouped = invoices.groupBy { it.date }
+            var grandTotal = 0.0
             grouped.forEach { (date, list) ->
-                sb.appendLine("Date: $date")
-                list.forEach {
-                    sb.appendLine("Invoice ID: ${it.id.take(10)}    Time: ${it.time}    ${"%.2f".format(it.total)}$")
-                }
-                sb.appendLine("Subtotal: ${"%.2f".format(list.sumOf { it.total })}$")
-                sb.appendLine("-----------------------------------")
+                val dayTotal = loadDailyOverride(ctx, date) ?: list.sumOf { it.total }
+                grandTotal += dayTotal
+                val count = list.size
+                sb.appendLine("${date}   ($count orders)   ${"%.2f".format(dayTotal)}$")
             }
-
-            val grandTotal = invoices.sumOf { it.total }
+            sb.appendLine("------------------------------------------")
             sb.appendLine("GRAND TOTAL: ${"%.2f".format(grandTotal)}$")
         }
     }
