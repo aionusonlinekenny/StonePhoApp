@@ -1,5 +1,6 @@
 package com.example.stonephopro.ui.screen
 
+import android.content.Context
 import android.os.Build
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.clickable
@@ -34,6 +35,12 @@ import java.io.File
 
 enum class ViewMode {
     BY_DAY, BY_MONTH, CUSTOM
+}
+
+private fun loadDailyOverride(ctx: Context, date: String): Double? {
+    val v = ctx.getSharedPreferences("weekly_income", Context.MODE_PRIVATE)
+        .getFloat("override_$date", -1f)
+    return if (v < 0f) null else v.toDouble()
 }
 
 @RequiresApi(Build.VERSION_CODES.N)
@@ -333,7 +340,10 @@ fun InvoiceHistoryScreen(onBack: () -> Unit, permission: String) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        val totalAmount = invoices.sumOf { it.total }
+        val totalAmount = if (viewMode == ViewMode.BY_DAY)
+            loadDailyOverride(context, selectedDate) ?: invoices.sumOf { it.total }
+        else
+            invoices.sumOf { it.total }
         val invoiceCount = invoices.size
 
         Row(
@@ -373,7 +383,7 @@ fun InvoiceHistoryScreen(onBack: () -> Unit, permission: String) {
                     val groupedInvoices = currentInvoices.groupBy { it.date }
 
                     groupedInvoices.forEach { (date, invoiceList) ->
-                        val dailyTotal = invoiceList.sumOf { it.total }
+                        val dailyTotal = loadDailyOverride(context, date) ?: invoiceList.sumOf { it.total }
                         Text(
                             text = "📅 Date: $date - Total: %.2f$".format(dailyTotal),
                             fontSize = 14.sp,
