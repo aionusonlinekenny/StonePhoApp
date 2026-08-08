@@ -805,116 +805,127 @@ private fun SplitBillDialog(
     onDismiss: () -> Unit,
     onCloseTable: () -> Unit
 ) {
-    val context = LocalContext.current
-    val scope   = rememberCoroutineScope()
-    val items   = order.lineItems?.elements ?: emptyList()
+    val context  = LocalContext.current
+    val scope    = rememberCoroutineScope()
+    val allItems = order.lineItems?.elements ?: emptyList()
 
-    var splitMap    by remember { mutableStateOf(items.associate { it.id to 1 }) }
-    var printStatus by remember { mutableStateOf("") }
-    var isSaving    by remember { mutableStateOf(false) }
+    var remainingItems by remember { mutableStateOf(allItems) }
+    var selectedIds    by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var splitCount     by remember { mutableStateOf(1) }
+    var printStatus    by remember { mutableStateOf("") }
+    var isSaving       by remember { mutableStateOf(false) }
 
-    val split1Items = items.filter { (splitMap[it.id] ?: 1) == 1 }
-    val split2Items = items.filter { (splitMap[it.id] ?: 1) == 2 }
-    val split1Total = split1Items.sumOf { it.lineTotal }
-    val split2Total = split2Items.sumOf { it.lineTotal }
+    val selectedItems = remainingItems.filter { it.id in selectedIds }
+    val selectedTotal = selectedItems.sumOf { it.lineTotal }
+    val allDone       = remainingItems.isEmpty()
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(16.dp),
+            shape    = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth().fillMaxHeight(0.88f)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
+
                 Text(
                     "✂️ Chia bill — Bàn ${order.title.ifEmpty { "#${order.id.takeLast(4)}" }}",
                     fontWeight = FontWeight.Bold, fontSize = 17.sp
                 )
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Split totals
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .background(Color(0xFFE3F2FD), RoundedCornerShape(8.dp))
-                            .padding(vertical = 10.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("Phần 1", fontSize = 12.sp, color = Color(0xFF1565C0))
-                            Text(formatCents(split1Total), fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF1565C0))
-                        }
-                    }
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .background(Color(0xFFE8F5E9), RoundedCornerShape(8.dp))
-                            .padding(vertical = 10.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("Phần 2", fontSize = 12.sp, color = Color(0xFF2E7D32))
-                            Text(formatCents(split2Total), fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF2E7D32))
-                        }
-                    }
-                }
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Column headers
-                Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
-                    Text("Món",     modifier = Modifier.weight(1f),   fontSize = 11.sp, color = Color.Gray)
-                    Text("T.Tiền", modifier = Modifier.width(64.dp), fontSize = 11.sp, color = Color.Gray, textAlign = TextAlign.End)
-                    Text("Phần",   modifier = Modifier.width(80.dp), fontSize = 11.sp, color = Color.Gray, textAlign = TextAlign.Center)
-                }
-                Divider()
-
-                // Items
-                LazyColumn(modifier = Modifier.weight(1f)) {
-                    items(items, key = { it.id }) { li ->
-                        val name = (li.item?.name?.takeIf { it.isNotBlank() }
-                            ?: li.name.takeIf { it.isNotBlank() } ?: "(Không tên)")
-                        val qty = if (li.quantity % 1.0 == 0.0) "x${li.quantity.toInt()}" else "x%.1f".format(li.quantity)
-                        val current = splitMap[li.id] ?: 1
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(name, fontSize = 13.sp)
-                                Text(qty, fontSize = 11.sp, color = Color.Gray)
-                            }
-                            Text(
-                                formatCents(li.lineTotal),
-                                modifier = Modifier.width(64.dp),
-                                fontSize = 13.sp,
-                                textAlign = TextAlign.End
-                            )
-                            Row(
-                                modifier = Modifier.width(80.dp),
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                listOf(1 to Color(0xFF1565C0), 2 to Color(0xFF2E7D32)).forEach { (n, color) ->
-                                    Box(
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .background(
-                                                if (current == n) color else Color(0xFFE0E0E0),
-                                                RoundedCornerShape(6.dp)
-                                            )
-                                            .clickable { splitMap = splitMap + (li.id to n) },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            "$n",
-                                            color = if (current == n) Color.White else Color.Gray,
-                                            fontSize = 14.sp, fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                    if (n == 1) Spacer(modifier = Modifier.width(6.dp))
-                                }
-                            }
+                if (allDone) {
+                    // ── Tất cả đã tính ────────────────────────────────────
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("✅", fontSize = 48.sp)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Đã tính hết ${allItems.size} món", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Text("${splitCount - 1} phần đã in", fontSize = 13.sp, color = Color.Gray)
                         }
-                        Divider(color = Color(0xFFEEEEEE))
+                    }
+                } else {
+                    // ── Header phần hiện tại ──────────────────────────────
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF7B1FA2).copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment     = Alignment.CenterVertically
+                    ) {
+                        Text("Phần $splitCount", fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), fontSize = 15.sp)
+                        Text("Còn ${remainingItems.size} món chưa tính", fontSize = 12.sp, color = Color.Gray)
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // Select all / deselect
+                    Row {
+                        TextButton(onClick = { selectedIds = remainingItems.map { it.id }.toSet() }) {
+                            Text("Chọn tất cả", fontSize = 13.sp, color = Color(0xFF7B1FA2))
+                        }
+                        TextButton(onClick = { selectedIds = emptySet() }) {
+                            Text("Bỏ chọn", fontSize = 13.sp, color = Color.Gray)
+                        }
+                    }
+
+                    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+                        Text("",       modifier = Modifier.width(28.dp))
+                        Text("Món",    modifier = Modifier.weight(1f),   fontSize = 11.sp, color = Color.Gray)
+                        Text("T.Tiền", modifier = Modifier.width(72.dp), fontSize = 11.sp, color = Color.Gray, textAlign = TextAlign.End)
+                    }
+                    Divider()
+
+                    // Danh sách món còn lại
+                    LazyColumn(modifier = Modifier.weight(1f)) {
+                        items(remainingItems, key = { it.id }) { li ->
+                            val isSelected = li.id in selectedIds
+                            val name = li.item?.name?.takeIf { it.isNotBlank() }
+                                ?: li.name.takeIf { it.isNotBlank() } ?: "(Không tên)"
+                            val qty = if (li.quantity % 1.0 == 0.0) "x${li.quantity.toInt()}"
+                                      else "x%.1f".format(li.quantity)
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(if (isSelected) Color(0xFFF3E5F5) else Color.Transparent)
+                                    .clickable {
+                                        selectedIds = if (isSelected) selectedIds - li.id else selectedIds + li.id
+                                    }
+                                    .padding(vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    if (isSelected) "✓" else "○",
+                                    modifier  = Modifier.width(28.dp),
+                                    color     = if (isSelected) Color(0xFF7B1FA2) else Color.LightGray,
+                                    fontWeight = FontWeight.Bold, fontSize = 16.sp
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(name, fontSize = 13.sp, fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal)
+                                    Text(qty,  fontSize = 11.sp, color = Color.Gray)
+                                }
+                                Text(
+                                    formatCents(li.lineTotal),
+                                    modifier  = Modifier.width(72.dp),
+                                    fontSize  = 13.sp,
+                                    textAlign = TextAlign.End,
+                                    color     = if (isSelected) Color(0xFF7B1FA2) else Color(0xFF424242)
+                                )
+                            }
+                            Divider(color = Color(0xFFEEEEEE))
+                        }
+                    }
+
+                    // Tổng đã chọn
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF7B1FA2), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment     = Alignment.CenterVertically
+                    ) {
+                        Text("${selectedItems.size} món · Phần $splitCount", color = Color.White, fontSize = 13.sp)
+                        Text(formatCents(selectedTotal), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
                     }
                 }
 
@@ -922,72 +933,61 @@ private fun SplitBillDialog(
                 if (printStatus.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        printStatus,
-                        fontSize = 12.sp,
+                        printStatus, fontSize = 12.sp,
                         color = if (printStatus.startsWith("✅")) Color(0xFF2E7D32) else Color(0xFFC62828)
                     )
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Print buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(
-                        Triple("🖨️ In Phần 1", split1Items, split1Total),
-                        Triple("🖨️ In Phần 2", split2Items, split2Total)
-                    ).forEachIndexed { idx, (label, splitItems, splitTotal) ->
-                        val color = if (idx == 0) listOf(Color(0xFF1565C0), Color(0xFF0D47A1))
-                                    else listOf(Color(0xFF43A047), Color(0xFF1B5E20))
+                // Buttons
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button3D(
+                        text = "✕ Hủy", onClick = onDismiss,
+                        modifier = Modifier.weight(1f).height(46.dp), fontSize = 13.sp,
+                        gradientColors = listOf(Color(0xFF78909C), Color(0xFF546E7A))
+                    )
+
+                    if (!allDone) {
                         Button3D(
-                            text = label,
+                            text    = "🖨️ In phần $splitCount & tiếp",
                             onClick = {
-                                scope.launch {
-                                    val now = java.util.Calendar.getInstance()
-                                    val dateStr = SimpleDateFormat("MM-dd-yyyy", Locale.US).format(now.time)
-                                    val timeStr = SimpleDateFormat("HH:mm", Locale.US).format(now.time)
-                                    val receipt = buildCloverReceiptText(
-                                        invoiceId  = "SPLIT-${idx + 1}",
-                                        tableTitle = order.title,
-                                        lineItems  = splitItems,
-                                        totalCents = splitTotal,
-                                        date       = dateStr,
-                                        time       = timeStr
-                                    )
-                                    val (ip, port) = PrinterConfig.getSelectedIpPort() ?: ("192.168.0.114" to 9100)
-                                    printStatus = try {
-                                        SocketPrinter.printText(ip, port, receipt)
-                                        "✅ Đã in Phần ${idx + 1}"
-                                    } catch (e: Exception) {
-                                        "❌ Lỗi in Phần ${idx + 1}: ${e.message}"
+                                if (selectedIds.isNotEmpty()) {
+                                    scope.launch {
+                                        val now     = java.util.Calendar.getInstance()
+                                        val dateStr = SimpleDateFormat("MM-dd-yyyy", Locale.US).format(now.time)
+                                        val timeStr = SimpleDateFormat("HH:mm",      Locale.US).format(now.time)
+                                        val receipt = buildCloverReceiptText(
+                                            invoiceId  = "SPLIT-$splitCount",
+                                            tableTitle = order.title,
+                                            lineItems  = selectedItems,
+                                            totalCents = selectedTotal,
+                                            date       = dateStr,
+                                            time       = timeStr
+                                        )
+                                        val (ip, port) = PrinterConfig.getSelectedIpPort() ?: ("192.168.0.114" to 9100)
+                                        printStatus = try {
+                                            SocketPrinter.printText(ip, port, receipt)
+                                            "✅ Đã in Phần $splitCount"
+                                        } catch (e: Exception) { "❌ Lỗi: ${e.message}" }
+                                        remainingItems = remainingItems.filter { it.id !in selectedIds }
+                                        selectedIds    = emptySet()
+                                        splitCount++
                                     }
                                 }
                             },
-                            modifier = Modifier.weight(1f).height(44.dp),
-                            fontSize = 12.sp,
-                            gradientColors = color
+                            enabled        = selectedIds.isNotEmpty(),
+                            modifier       = Modifier.weight(2f).height(46.dp),
+                            fontSize       = 12.sp,
+                            gradientColors = if (selectedIds.isNotEmpty())
+                                listOf(Color(0xFF7B1FA2), Color(0xFF4A148C))
+                            else
+                                listOf(Color(0xFFBDBDBD), Color(0xFF9E9E9E))
                         )
                     }
-                }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Action buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
                     Button3D(
-                        text = "✕ Hủy",
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f).height(44.dp),
-                        fontSize = 13.sp,
-                        gradientColors = listOf(Color(0xFF78909C), Color(0xFF546E7A))
-                    )
-                    Button3D(
-                        text = if (isSaving) "⏳ Đang lưu..." else "✔ Lưu & Đóng bàn",
+                        text    = if (isSaving) "⏳..." else "✔ Đóng bàn",
                         onClick = {
                             if (!isSaving) {
                                 isSaving = true
@@ -999,15 +999,15 @@ private fun SplitBillDialog(
                                         val qty = li.quantity.roundToInt().coerceAtLeast(1)
                                         List(qty) { idx -> Product(id = li.id.hashCode() + idx, name = name, price = li.price / 100.0, category = "Clover") }
                                     }
-                                    val td = order.total / 100.0
+                                    val td  = order.total / 100.0
                                     val now = java.util.Calendar.getInstance()
                                     InvoiceStorage.saveInvoice(context, Invoice(
-                                        id = InvoiceStorage.generateInvoiceId(),
-                                        items = products,
-                                        subtotal = td / 1.08, discount = 0.0, tax = td - td / 1.08,
-                                        total = td,
-                                        date = SimpleDateFormat("MM-dd-yyyy", Locale.US).format(now.time),
-                                        time = SimpleDateFormat("HH:mm", Locale.US).format(now.time),
+                                        id         = InvoiceStorage.generateInvoiceId(),
+                                        items      = products,
+                                        subtotal   = td / 1.08, discount = 0.0, tax = td - td / 1.08,
+                                        total      = td,
+                                        date       = SimpleDateFormat("MM-dd-yyyy", Locale.US).format(now.time),
+                                        time       = SimpleDateFormat("HH:mm",      Locale.US).format(now.time),
                                         tableTitle = order.title
                                     ))
                                     CloverRepository.deleteOrderViaProxy(CloverConfig.PROXY_SECRET, order.id)
@@ -1016,8 +1016,8 @@ private fun SplitBillDialog(
                                 }
                             }
                         },
-                        modifier = Modifier.weight(2f).height(44.dp),
-                        fontSize = 13.sp,
+                        modifier       = Modifier.weight(1f).height(46.dp),
+                        fontSize       = 12.sp,
                         gradientColors = listOf(Color(0xFF43A047), Color(0xFF1B5E20))
                     )
                 }
