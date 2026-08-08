@@ -15,7 +15,7 @@ Stack: Kotlin + Jetpack Compose · Firebase · Clover REST API v3 · ESC/POS the
 | Clover API Token | `c30698f2-347e-add6-b758-44285d0e6cac` *(server-side PHP only — không đưa vào Android code)* |
 | Clover App ID | `NJVXQ3773SZFP` |
 | LoyaltApp App ID | `MGGRQ01WQYC8A` |
-| Backend URL | `https://www.stonephovaldosta.com/loyalteapp/backend/stonepho_clover.php` |
+| Backend URL | `https://stonephovaldosta.com/loyalteapp/backend/stonepho_clover.php` |
 | PHP version server | 7.4.33 · cURL YES |
 
 ---
