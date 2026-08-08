@@ -193,6 +193,45 @@ Khi staff bấm **💵 Cash**, flow là:
 
 ---
 
+## Sync Menu từ Clover POS (`ManageMenuScreen.kt`)
+
+### Luồng
+```
+ManageMenuScreen → fetchSyncData()
+  → CloverRepository.fetchCatalogCategoriesViaProxy()  (?action=categories)
+  → CloverRepository.fetchCatalogItemsViaProxy()       (?action=items)
+  → showSyncPreview dialog
+      → "Hợp nhất" → mergeFromClover()  → OrderViewModel.replaceMenu()
+      → "Thay toàn bộ" → replaceWithClover() → OrderViewModel.replaceMenu()
+```
+
+### Helper functions (top-level private trong ManageMenuScreen.kt)
+- `mergeFromClover(cloverCats, cloverItems, currentCats, currentProds)`: Chỉ thêm categories/products chưa có (so sánh lowercase name). Giữ nguyên màu và thứ tự hiện có.
+- `replaceWithClover(cloverCats, cloverItems, currentCats)`: Xóa toàn bộ, tạo lại từ Clover. Giữ `colorHex` nếu category name đã tồn tại; category mới dùng màu từ `SYNC_COLORS` (vòng lặp).
+
+### PHP endpoints mới
+- `?action=categories` → `/v3/merchants/{id}/categories?limit=200`
+- `?action=items` → `/v3/merchants/{id}/items?expand=categories&limit=1000` (lọc bỏ hidden và không có category)
+
+### Lưu ý
+- Sau khi sync, `OrderViewModel.replaceMenu()` tự gọi `saveMenu()` → lưu vào `catalog_data.json` + `product_data.json`
+- **Cần upload PHP file lên server** sau mỗi lần sửa `stonepho_clover.php`
+
+---
+
+## Tính năng Split Bill theo item (`CloverOrderScreen.kt`)
+
+Khi staff bấm **✂️ Chia bill**, flow là:
+1. `SplitBillDialog` mở — hiển thị tất cả items còn lại (remainingItems)
+2. Staff tap item để toggle chọn/bỏ chọn (highlight tím khi chọn)
+3. Bấm "🖨️ In phần N & tiếp" → in receipt cho người đó → items bị xóa khỏi pool
+4. Lặp lại cho đến khi `remainingItems.isEmpty()` → hiển thị "✅ Đã tính hết"
+5. "✔ Đóng bàn" → lưu Invoice + xóa order Clover + đóng dialog
+
+**Không có giới hạn số phần** — chia bao nhiêu lần tùy ý.
+
+---
+
 ## Lịch sử fix quan trọng
 
 | Ngày | Vấn đề | Giải pháp |
@@ -205,3 +244,5 @@ Khi staff bấm **💵 Cash**, flow là:
 | 2026-07 | Bàn trống vẫn xanh dù đã force Color.White nhiều cách | Bẫy `null == null → true` trong `isSelected`; fix bằng `order != null && selectedOrder?.id == order.id` |
 | 2026-07 | Bàn OUTS không nhận data dù Clover gửi đúng | Tên slot `"OUTS"` không khớp Clover title `"OUTSIDE"`; dùng `cloverTitle = "OUTSIDE"` |
 | 2026-07 | Cash payment không release bàn trên Clover POS | Thêm `action=delete_order` vào PHP proxy; gọi sau khi in receipt |
+| 2026-08 | Button3D không có param `enabled` | Dùng `canPrint` guard trong `onClick` + đổi gradient sang xám khi inactive |
+| 2026-08 | Sync menu từ Clover POS | PHP thêm `action=categories/items`; Android thêm CloverRepository + ManageMenuScreen Sync POS button |
