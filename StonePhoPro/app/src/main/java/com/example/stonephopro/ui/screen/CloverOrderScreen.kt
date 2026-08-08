@@ -27,6 +27,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.example.stonephopro.components.Button3D
 import com.example.stonephopro.model.Invoice
 import com.example.stonephopro.model.Product
@@ -503,6 +504,7 @@ private fun OrderDetailPanel(
     var payResult          by remember { mutableStateOf("") }
     var showPayDialog      by remember { mutableStateOf(false) }
     var showChangeCalc     by remember { mutableStateOf(false) }
+    var showSplitBill      by remember { mutableStateOf(false) }
     var receivedAmountText by remember { mutableStateOf("") }
 
     val timeStr = remember(order.createdTime) {
@@ -595,28 +597,31 @@ private fun OrderDetailPanel(
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Cash payment: open change calculator first
+                Button3D(
+                    text = "✂️ Chia bill",
+                    onClick = { showSplitBill = true },
+                    modifier = Modifier.weight(1f).height(52.dp),
+                    fontSize = 13.sp,
+                    gradientColors = listOf(Color(0xFF7B1FA2), Color(0xFF4A148C))
+                )
                 Button3D(
                     text = "💵 Cash",
-                    onClick = {
-                        receivedAmountText = ""
-                        showChangeCalc = true
-                    },
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    onClick = { receivedAmountText = ""; showChangeCalc = true },
+                    modifier = Modifier.weight(1f).height(52.dp),
                     fontSize = 14.sp,
                     gradientColors = listOf(Color(0xFF43A047), Color(0xFF1B5E20))
                 )
-
             }
         }
     }
 
     // ── Change calculator dialog ──────────────────────────────────────────────
     if (showChangeCalc) {
-        val totalDollars  = order.total / 100.0
-        val received      = receivedAmountText.toDoubleOrNull() ?: 0.0
-        val change        = received - totalDollars
-        val canConfirm    = received >= totalDollars
+        val totalDollars      = order.total / 100.0
+        val received          = receivedAmountText.toDoubleOrNull() ?: 0.0
+        val effectiveReceived = if (receivedAmountText.isEmpty()) totalDollars else received
+        val effectiveChange   = effectiveReceived - totalDollars
+        val canConfirm        = receivedAmountText.isEmpty() || received >= totalDollars
 
         AlertDialog(
             onDismissRequest = { showChangeCalc = false },
@@ -687,10 +692,12 @@ private fun OrderDetailPanel(
                             color = if (canConfirm) Color(0xFF2E7D32) else Color(0xFFC62828)
                         )
                         Text(
-                            text = if (received == 0.0) "—"
-                                   else if (canConfirm) "$%,.2f".format(change)
-                                   else "-$%,.2f".format(-change),
-                            fontSize = 26.sp,
+                            text = when {
+                                receivedAmountText.isEmpty() -> "Trả đúng tiền"
+                                canConfirm -> "$%,.2f".format(effectiveChange)
+                                else -> "-$%,.2f".format(-effectiveChange)
+                            },
+                            fontSize = if (receivedAmountText.isEmpty()) 16.sp else 26.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (canConfirm) Color(0xFF2E7D32) else Color(0xFFC62828)
                         )
@@ -729,8 +736,8 @@ private fun OrderDetailPanel(
                                 tableTitle   = order.title,
                                 lineItems    = lineItemsList,
                                 totalCents   = order.total,
-                                receivedAmt  = received,
-                                changeAmt    = change,
+                                receivedAmt  = effectiveReceived,
+                                changeAmt    = effectiveChange,
                                 date         = dateStr,
                                 time         = timeNow
                             )
@@ -763,6 +770,15 @@ private fun OrderDetailPanel(
         )
     }
 
+    // ── Split bill dialog ─────────────────────────────────────────────────────
+    if (showSplitBill) {
+        SplitBillDialog(
+            order        = order,
+            onDismiss    = { showSplitBill = false },
+            onCloseTable = { showSplitBill = false; onCloseTable() }
+        )
+    }
+
     // Cash payment result dialog
     if (showPayDialog) {
         AlertDialog(
@@ -780,6 +796,234 @@ private fun OrderDetailPanel(
         )
     }
 
+}
+
+// ── Split bill dialog ─────────────────────────────────────────────────────────
+@Composable
+private fun SplitBillDialog(
+    order: CloverOrder,
+    onDismiss: () -> Unit,
+    onCloseTable: () -> Unit
+) {
+    val context = LocalContext.current
+    val scope   = rememberCoroutineScope()
+    val items   = order.lineItems?.elements ?: emptyList()
+
+    var splitMap    by remember { mutableStateOf(items.associate { it.id to 1 }) }
+    var printStatus by remember { mutableStateOf("") }
+    var isSaving    by remember { mutableStateOf(false) }
+
+    val split1Items = items.filter { (splitMap[it.id] ?: 1) == 1 }
+    val split2Items = items.filter { (splitMap[it.id] ?: 1) == 2 }
+    val split1Total = split1Items.sumOf { it.lineTotal }
+    val split2Total = split2Items.sumOf { it.lineTotal }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.88f)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    "✂️ Chia bill — Bàn ${order.title.ifEmpty { "#${order.id.takeLast(4)}" }}",
+                    fontWeight = FontWeight.Bold, fontSize = 17.sp
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Split totals
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(Color(0xFFE3F2FD), RoundedCornerShape(8.dp))
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Phần 1", fontSize = 12.sp, color = Color(0xFF1565C0))
+                            Text(formatCents(split1Total), fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF1565C0))
+                        }
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(Color(0xFFE8F5E9), RoundedCornerShape(8.dp))
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Phần 2", fontSize = 12.sp, color = Color(0xFF2E7D32))
+                            Text(formatCents(split2Total), fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF2E7D32))
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Column headers
+                Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+                    Text("Món",     modifier = Modifier.weight(1f),   fontSize = 11.sp, color = Color.Gray)
+                    Text("T.Tiền", modifier = Modifier.width(64.dp), fontSize = 11.sp, color = Color.Gray, textAlign = TextAlign.End)
+                    Text("Phần",   modifier = Modifier.width(80.dp), fontSize = 11.sp, color = Color.Gray, textAlign = TextAlign.Center)
+                }
+                Divider()
+
+                // Items
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    items(items, key = { it.id }) { li ->
+                        val name = (li.item?.name?.takeIf { it.isNotBlank() }
+                            ?: li.name.takeIf { it.isNotBlank() } ?: "(Không tên)")
+                        val qty = if (li.quantity % 1.0 == 0.0) "x${li.quantity.toInt()}" else "x%.1f".format(li.quantity)
+                        val current = splitMap[li.id] ?: 1
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(name, fontSize = 13.sp)
+                                Text(qty, fontSize = 11.sp, color = Color.Gray)
+                            }
+                            Text(
+                                formatCents(li.lineTotal),
+                                modifier = Modifier.width(64.dp),
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.End
+                            )
+                            Row(
+                                modifier = Modifier.width(80.dp),
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                listOf(1 to Color(0xFF1565C0), 2 to Color(0xFF2E7D32)).forEach { (n, color) ->
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .background(
+                                                if (current == n) color else Color(0xFFE0E0E0),
+                                                RoundedCornerShape(6.dp)
+                                            )
+                                            .clickable { splitMap = splitMap + (li.id to n) },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            "$n",
+                                            color = if (current == n) Color.White else Color.Gray,
+                                            fontSize = 14.sp, fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    if (n == 1) Spacer(modifier = Modifier.width(6.dp))
+                                }
+                            }
+                        }
+                        Divider(color = Color(0xFFEEEEEE))
+                    }
+                }
+
+                // Print status
+                if (printStatus.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        printStatus,
+                        fontSize = 12.sp,
+                        color = if (printStatus.startsWith("✅")) Color(0xFF2E7D32) else Color(0xFFC62828)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Print buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(
+                        Triple("🖨️ In Phần 1", split1Items, split1Total),
+                        Triple("🖨️ In Phần 2", split2Items, split2Total)
+                    ).forEachIndexed { idx, (label, splitItems, splitTotal) ->
+                        val color = if (idx == 0) listOf(Color(0xFF1565C0), Color(0xFF0D47A1))
+                                    else listOf(Color(0xFF43A047), Color(0xFF1B5E20))
+                        Button3D(
+                            text = label,
+                            onClick = {
+                                scope.launch {
+                                    val now = java.util.Calendar.getInstance()
+                                    val dateStr = SimpleDateFormat("MM-dd-yyyy", Locale.US).format(now.time)
+                                    val timeStr = SimpleDateFormat("HH:mm", Locale.US).format(now.time)
+                                    val receipt = buildCloverReceiptText(
+                                        invoiceId  = "SPLIT-${idx + 1}",
+                                        tableTitle = order.title,
+                                        lineItems  = splitItems,
+                                        totalCents = splitTotal,
+                                        date       = dateStr,
+                                        time       = timeStr
+                                    )
+                                    val (ip, port) = PrinterConfig.getSelectedIpPort() ?: ("192.168.0.114" to 9100)
+                                    printStatus = try {
+                                        SocketPrinter.printText(ip, port, receipt)
+                                        "✅ Đã in Phần ${idx + 1}"
+                                    } catch (e: Exception) {
+                                        "❌ Lỗi in Phần ${idx + 1}: ${e.message}"
+                                    }
+                                }
+                            },
+                            modifier = Modifier.weight(1f).height(44.dp),
+                            fontSize = 12.sp,
+                            gradientColors = color
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Action buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button3D(
+                        text = "✕ Hủy",
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f).height(44.dp),
+                        fontSize = 13.sp,
+                        gradientColors = listOf(Color(0xFF78909C), Color(0xFF546E7A))
+                    )
+                    Button3D(
+                        text = if (isSaving) "⏳ Đang lưu..." else "✔ Lưu & Đóng bàn",
+                        onClick = {
+                            if (!isSaving) {
+                                isSaving = true
+                                scope.launch {
+                                    val lineItemsList = order.lineItems?.elements ?: emptyList()
+                                    val products = lineItemsList.flatMap { li ->
+                                        val name = li.item?.name?.takeIf { it.isNotBlank() }
+                                            ?: li.name.takeIf { it.isNotBlank() } ?: "(Không tên)"
+                                        val qty = li.quantity.roundToInt().coerceAtLeast(1)
+                                        List(qty) { idx -> Product(id = li.id.hashCode() + idx, name = name, price = li.price / 100.0, category = "Clover") }
+                                    }
+                                    val td = order.total / 100.0
+                                    val now = java.util.Calendar.getInstance()
+                                    InvoiceStorage.saveInvoice(context, Invoice(
+                                        id = InvoiceStorage.generateInvoiceId(),
+                                        items = products,
+                                        subtotal = td / 1.08, discount = 0.0, tax = td - td / 1.08,
+                                        total = td,
+                                        date = SimpleDateFormat("MM-dd-yyyy", Locale.US).format(now.time),
+                                        time = SimpleDateFormat("HH:mm", Locale.US).format(now.time),
+                                        tableTitle = order.title
+                                    ))
+                                    CloverRepository.deleteOrderViaProxy(CloverConfig.PROXY_SECRET, order.id)
+                                    isSaving = false
+                                    onCloseTable()
+                                }
+                            }
+                        },
+                        modifier = Modifier.weight(2f).height(44.dp),
+                        fontSize = 13.sp,
+                        gradientColors = listOf(Color(0xFF43A047), Color(0xFF1B5E20))
+                    )
+                }
+            }
+        }
+    }
 }
 
 private fun formatCents(cents: Long): String {
