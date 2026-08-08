@@ -2,10 +2,12 @@ package com.example.stonephopro.ui.screen
 
 import android.os.Build
 import androidx.annotation.RequiresApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -15,18 +17,69 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.stonephopro.model.*
 import com.example.stonephopro.components.Button3D
 import com.example.stonephopro.utils.ExtraStorage
+import com.example.stonephopro.utils.clover.CloverCatalogCategory
+import com.example.stonephopro.utils.clover.CloverCatalogItem
+import com.example.stonephopro.utils.clover.CloverConfig
+import com.example.stonephopro.utils.clover.CloverRepository
 import com.example.stonephopro.viewmodel.OrderViewModel
 import com.example.stonephopro.utils.PriceInputPad
+import kotlinx.coroutines.launch
 
 fun <T> MutableList<T>.swap(i: Int, j: Int) {
     val tmp = this[i]
     this[i] = this[j]
     this[j] = tmp
+}
+
+private val SYNC_COLORS = listOf("#90CAF9", "#A5D6A7", "#FFCC80", "#F48FB1", "#CE93D8", "#ECEFF1")
+
+private fun mergeFromClover(
+    cloverCats: List<CloverCatalogCategory>,
+    cloverItems: List<CloverCatalogItem>,
+    currentCats: List<Category>,
+    currentProds: List<Product>
+): Pair<List<Category>, List<Product>> {
+    val existingCatNames = currentCats.associate { it.name.lowercase() to it.colorHex }
+    val mergedCats = currentCats.toMutableList()
+    cloverCats.filter { it.name.isNotBlank() }.forEach { cc ->
+        if (!existingCatNames.containsKey(cc.name.lowercase()))
+            mergedCats.add(Category(cc.name, SYNC_COLORS[mergedCats.size % SYNC_COLORS.size]))
+    }
+    val existingProdNames = currentProds.map { it.name.lowercase() }.toSet()
+    val mergedProds = currentProds.toMutableList()
+    var nextId = (currentProds.maxOfOrNull { it.id } ?: 0) + 1
+    cloverItems.forEach { ci ->
+        if (!existingProdNames.contains(ci.name.lowercase())) {
+            val catName = ci.categories?.elements?.firstOrNull()?.name ?: return@forEach
+            mergedProds.add(Product(nextId++, ci.name, ci.price / 100.0, catName, colorHex = "#ECEFF1"))
+        }
+    }
+    return Pair(mergedCats, mergedProds)
+}
+
+private fun replaceWithClover(
+    cloverCats: List<CloverCatalogCategory>,
+    cloverItems: List<CloverCatalogItem>,
+    currentCats: List<Category>
+): Pair<List<Category>, List<Product>> {
+    val existingColorMap = currentCats.associate { it.name.lowercase() to it.colorHex }
+    val newCats = cloverCats.mapIndexed { idx, cc ->
+        Category(cc.name, existingColorMap[cc.name.lowercase()] ?: SYNC_COLORS[idx % SYNC_COLORS.size])
+    }
+    val catNameSet = newCats.map { it.name.lowercase() }.toSet()
+    var nextId = 1
+    val newProds = cloverItems.mapNotNull { ci ->
+        val catName = ci.categories?.elements?.firstOrNull()?.name ?: return@mapNotNull null
+        if (!catNameSet.contains(catName.lowercase())) return@mapNotNull null
+        Product(nextId++, ci.name, ci.price / 100.0, catName, colorHex = "#ECEFF1")
+    }
+    return Pair(newCats, newProds)
 }
 
 @Composable
@@ -58,7 +111,35 @@ fun DropdownMenuBox(
 @Composable
 fun ManageMenuScreen(viewModel: OrderViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
+    val scope   = rememberCoroutineScope()
     var selectedTab by remember { mutableIntStateOf(0) }
+
+    // ── Clover sync state ────────────────────────────────────────────────────
+    var isSyncing        by remember { mutableStateOf(false) }
+    var syncError        by remember { mutableStateOf("") }
+    var syncPreviewCats  by remember { mutableStateOf<List<CloverCatalogCategory>>(emptyList()) }
+    var syncPreviewItems by remember { mutableStateOf<List<CloverCatalogItem>>(emptyList()) }
+    var showSyncPreview  by remember { mutableStateOf(false) }
+    var syncDoneMsg      by remember { mutableStateOf("") }
+
+    fun fetchSyncData() {
+        isSyncing = true
+        syncError = ""
+        scope.launch {
+            val catsResult  = CloverRepository.fetchCatalogCategoriesViaProxy(CloverConfig.PROXY_SECRET)
+            val itemsResult = CloverRepository.fetchCatalogItemsViaProxy(CloverConfig.PROXY_SECRET)
+            when {
+                catsResult.isFailure  -> syncError = "❌ Lỗi categories: ${catsResult.exceptionOrNull()?.message}"
+                itemsResult.isFailure -> syncError = "❌ Lỗi items: ${itemsResult.exceptionOrNull()?.message}"
+                else -> {
+                    syncPreviewCats  = catsResult.getOrDefault(emptyList())
+                    syncPreviewItems = itemsResult.getOrDefault(emptyList())
+                    showSyncPreview  = true
+                }
+            }
+            isSyncing = false
+        }
+    }
 
     var newCategoryName by remember { mutableStateOf("") }
     var selectedCategoryIndex by remember { mutableIntStateOf(-1) }
@@ -107,6 +188,20 @@ fun ManageMenuScreen(viewModel: OrderViewModel, onBack: () -> Unit) {
                         Text(label, fontSize = 18.sp, modifier = Modifier.padding(12.dp))
                     }
                 }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            if (isSyncing) {
+                CircularProgressIndicator(modifier = Modifier.size(36.dp), strokeWidth = 3.dp)
+            } else {
+                Button3D(
+                    text = "🔄 Sync POS",
+                    onClick = { fetchSyncData() },
+                    modifier = Modifier.height(48.dp),
+                    fontSize = 13.sp,
+                    gradientColors = listOf(Color(0xFF7B1FA2), Color(0xFF4A148C))
+                )
             }
         }
 
@@ -521,5 +616,80 @@ fun ManageMenuScreen(viewModel: OrderViewModel, onBack: () -> Unit) {
             }
 
         }
+    }
+
+    // ── Sync preview dialog ───────────────────────────────────────────────────
+    if (showSyncPreview) {
+        AlertDialog(
+            onDismissRequest = { showSyncPreview = false },
+            title = { Text("🔄 Sync Menu từ Clover POS", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFF3E5F5), RoundedCornerShape(8.dp))
+                            .padding(12.dp)
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Tìm thấy từ Clover POS:", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Text("📁  ${syncPreviewCats.size} danh mục", fontSize = 13.sp)
+                            Text("🍜  ${syncPreviewItems.size} món ăn (visible, có danh mục)", fontSize = 13.sp)
+                        }
+                    }
+                    Text("Chọn cách đồng bộ:", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Button3D(
+                        text = "🔗 Hợp nhất — Thêm mới, giữ menu cũ",
+                        onClick = {
+                            val (newCats, newProds) = mergeFromClover(
+                                syncPreviewCats, syncPreviewItems,
+                                viewModel.categories.toList(), viewModel.getAllProducts()
+                            )
+                            viewModel.replaceMenu(newCats, newProds)
+                            syncDoneMsg = "✅ Hợp nhất: ${newCats.size} danh mục · ${newProds.size} món"
+                            showSyncPreview = false
+                        },
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        fontSize = 13.sp,
+                        gradientColors = listOf(Color(0xFF1565C0), Color(0xFF0D47A1))
+                    )
+                    Button3D(
+                        text = "♻️ Thay toàn bộ — Xóa menu cũ, dùng Clover",
+                        onClick = {
+                            val (newCats, newProds) = replaceWithClover(
+                                syncPreviewCats, syncPreviewItems,
+                                viewModel.categories.toList()
+                            )
+                            viewModel.replaceMenu(newCats, newProds)
+                            syncDoneMsg = "✅ Đã thay toàn bộ: ${newCats.size} danh mục · ${newProds.size} món"
+                            showSyncPreview = false
+                        },
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        fontSize = 13.sp,
+                        gradientColors = listOf(Color(0xFFEF5350), Color(0xFFC62828))
+                    )
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { showSyncPreview = false }) { Text("Hủy") } }
+        )
+    }
+
+    if (syncError.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { syncError = "" },
+            title = { Text("Lỗi Sync") },
+            text  = { Text(syncError) },
+            confirmButton = { TextButton(onClick = { syncError = "" }) { Text("OK") } }
+        )
+    }
+
+    if (syncDoneMsg.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { syncDoneMsg = "" },
+            title = { Text("Sync hoàn tất") },
+            text  = { Text(syncDoneMsg) },
+            confirmButton = { TextButton(onClick = { syncDoneMsg = "" }) { Text("OK") } }
+        )
     }
 }

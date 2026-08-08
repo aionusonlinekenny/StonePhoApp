@@ -186,6 +186,21 @@ switch ($action) {
     case 'tables':
         die(clover('/tables?limit=200'));
 
+    case 'categories':
+        die(clover('/categories?limit=200'));
+
+    case 'items':
+        $raw  = json_decode(clover('/items?expand=categories&limit=1000'), true);
+        $all  = isset($raw['elements']) ? $raw['elements'] : array();
+        // Bỏ qua item ẩn và item không có danh mục
+        $visible = array_values(array_filter($all, function($item) {
+            $hidden = isset($item['hidden']) && $item['hidden'] === true;
+            $hasCat = isset($item['categories']['elements']) && count($item['categories']['elements']) > 0;
+            return !$hidden && $hasCat;
+        }));
+        $raw['elements'] = $visible;
+        die(json_encode($raw));
+
     case 'delete_order':
         $orderId = isset($_GET['order_id']) ? trim($_GET['order_id']) : '';
         if ($orderId === '') {

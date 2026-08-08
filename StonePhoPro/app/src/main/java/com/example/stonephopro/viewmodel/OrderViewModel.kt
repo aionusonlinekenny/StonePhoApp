@@ -213,6 +213,15 @@ class OrderViewModel(private val context: Context) : ViewModel() {
         saveMenu()
     }
 
+    fun replaceMenu(newCategories: List<Category>, newProducts: List<Product>) {
+        categories.clear()
+        categories.addAll(newCategories)
+        allProducts.clear()
+        allProducts.addAll(newProducts)
+        if (categories.isNotEmpty()) selectedCategory.value = categories.first()
+        saveMenu()
+    }
+
     fun saveMenu() {
         MenuStorage.saveMenu(context, categories, allProducts)
     }

@@ -87,6 +87,24 @@ object CloverRepository {
         }
     }
 
+    suspend fun fetchCatalogCategoriesViaProxy(
+        proxyToken: String
+    ): Result<List<CloverCatalogCategory>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = "${CloverConfig.PROXY_URL}?action=categories"
+            gson.fromJson(get(url, proxyToken), CloverCatalogCategoriesResponse::class.java).elements
+        }
+    }
+
+    suspend fun fetchCatalogItemsViaProxy(
+        proxyToken: String
+    ): Result<List<CloverCatalogItem>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = "${CloverConfig.PROXY_URL}?action=items"
+            gson.fromJson(get(url, proxyToken), CloverCatalogItemsResponse::class.java).elements
+        }
+    }
+
     suspend fun fetchTablesViaProxy(
         proxyToken: String
     ): Result<List<CloverTable>> = withContext(Dispatchers.IO) {

@@ -53,6 +53,32 @@ data class CloverItemRef(
     val name: String = ""
 )
 
+// ── Catalog / Menu sync models ────────────────────────────────────────────────
+data class CloverCatalogItemsResponse(
+    val elements: List<CloverCatalogItem> = emptyList()
+)
+
+data class CloverCatalogItem(
+    val id: String = "",
+    val name: String = "",
+    val price: Long = 0,
+    val hidden: Boolean = false,
+    val categories: CloverItemCategoriesWrapper? = null
+)
+
+data class CloverItemCategoriesWrapper(
+    val elements: List<CloverCatalogCategory> = emptyList()
+)
+
+data class CloverCatalogCategory(
+    val id: String = "",
+    val name: String = ""
+)
+
+data class CloverCatalogCategoriesResponse(
+    val elements: List<CloverCatalogCategory> = emptyList()
+)
+
 // Bàn từ Clover table service
 data class CloverTable(
     val id: String = "",
