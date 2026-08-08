@@ -217,7 +217,7 @@ fun CloverOrderScreen(onBack: () -> Unit) {
                         Text(
                             "💵 Cash hôm nay: ${"$%,.2f".format(todayCashTotal)}",
                             color = Color.White,
-                            fontSize = 11.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -640,14 +640,14 @@ private fun OrderDetailPanel(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(Color(0xFFE3F2FD), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Cần thanh toán", fontSize = 14.sp, color = Color(0xFF1565C0))
+                        Text("Cần thanh toán", fontSize = 16.sp, color = Color(0xFF1565C0))
                         Text(
                             formatCents(order.total),
-                            fontSize = 22.sp,
+                            fontSize = 30.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF1565C0)
                         )
@@ -662,13 +662,13 @@ private fun OrderDetailPanel(
                                 receivedAmountText = v
                             }
                         },
-                        label = { Text("Tiền nhận từ khách ($)") },
+                        label = { Text("Tiền nhận từ khách ($)", fontSize = 16.sp) },
                         placeholder = { Text("0.00") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         textStyle = LocalTextStyle.current.copy(
-                            fontSize = 20.sp,
+                            fontSize = 26.sp,
                             fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.End
                         )
@@ -688,7 +688,7 @@ private fun OrderDetailPanel(
                     ) {
                         Text(
                             if (canConfirm) "Tiền thối lại" else "Còn thiếu",
-                            fontSize = 14.sp,
+                            fontSize = 16.sp,
                             color = if (canConfirm) Color(0xFF2E7D32) else Color(0xFFC62828)
                         )
                         Text(
@@ -697,7 +697,7 @@ private fun OrderDetailPanel(
                                 canConfirm -> "$%,.2f".format(effectiveChange)
                                 else -> "-$%,.2f".format(-effectiveChange)
                             },
-                            fontSize = if (receivedAmountText.isEmpty()) 16.sp else 26.sp,
+                            fontSize = if (receivedAmountText.isEmpty()) 18.sp else 32.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (canConfirm) Color(0xFF2E7D32) else Color(0xFFC62828)
                         )
