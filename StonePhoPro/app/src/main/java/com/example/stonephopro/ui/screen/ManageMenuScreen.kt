@@ -51,6 +51,7 @@ private fun mergeFromClover(
         if (!existingCatNames.containsKey(cc.name.lowercase()))
             mergedCats.add(Category(cc.name, SYNC_COLORS[mergedCats.size % SYNC_COLORS.size]))
     }
+    val sortedCats = mergedCats.sortedBy { it.name }
     val existingProdNames = currentProds.map { it.name.lowercase() }.toSet()
     val mergedProds = currentProds.toMutableList()
     var nextId = (currentProds.maxOfOrNull { it.id } ?: 0) + 1
@@ -60,7 +61,8 @@ private fun mergeFromClover(
             mergedProds.add(Product(nextId++, ci.name, ci.price / 100.0, catName, colorHex = "#ECEFF1"))
         }
     }
-    return Pair(mergedCats, mergedProds)
+    val sortedProds = mergedProds.sortedBy { it.name }
+    return Pair(sortedCats, sortedProds)
 }
 
 private fun replaceWithClover(
@@ -69,12 +71,13 @@ private fun replaceWithClover(
     currentCats: List<Category>
 ): Pair<List<Category>, List<Product>> {
     val existingColorMap = currentCats.associate { it.name.lowercase() to it.colorHex }
-    val newCats = cloverCats.mapIndexed { idx, cc ->
+    val sortedCloverCats = cloverCats.sortedBy { it.name }
+    val newCats = sortedCloverCats.mapIndexed { idx, cc ->
         Category(cc.name, existingColorMap[cc.name.lowercase()] ?: SYNC_COLORS[idx % SYNC_COLORS.size])
     }
     val catNameSet = newCats.map { it.name.lowercase() }.toSet()
     var nextId = 1
-    val newProds = cloverItems.mapNotNull { ci ->
+    val newProds = cloverItems.sortedBy { it.name }.mapNotNull { ci ->
         val catName = ci.categories?.elements?.firstOrNull()?.name ?: return@mapNotNull null
         if (!catNameSet.contains(catName.lowercase())) return@mapNotNull null
         Product(nextId++, ci.name, ci.price / 100.0, catName, colorHex = "#ECEFF1")
