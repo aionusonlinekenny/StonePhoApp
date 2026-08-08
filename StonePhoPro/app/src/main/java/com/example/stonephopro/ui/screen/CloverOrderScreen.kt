@@ -949,10 +949,11 @@ private fun SplitBillDialog(
                     )
 
                     if (!allDone) {
+                        val canPrint = selectedIds.isNotEmpty()
                         Button3D(
                             text    = "🖨️ In phần $splitCount & tiếp",
                             onClick = {
-                                if (selectedIds.isNotEmpty()) {
+                                if (canPrint) {
                                     scope.launch {
                                         val now     = java.util.Calendar.getInstance()
                                         val dateStr = SimpleDateFormat("MM-dd-yyyy", Locale.US).format(now.time)
@@ -976,10 +977,9 @@ private fun SplitBillDialog(
                                     }
                                 }
                             },
-                            enabled        = selectedIds.isNotEmpty(),
                             modifier       = Modifier.weight(2f).height(46.dp),
                             fontSize       = 12.sp,
-                            gradientColors = if (selectedIds.isNotEmpty())
+                            gradientColors = if (canPrint)
                                 listOf(Color(0xFF7B1FA2), Color(0xFF4A148C))
                             else
                                 listOf(Color(0xFFBDBDBD), Color(0xFF9E9E9E))
