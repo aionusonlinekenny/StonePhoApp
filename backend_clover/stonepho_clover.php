@@ -234,6 +234,40 @@ switch ($action) {
             'ver'    => SCRIPT_VER
         )));
 
+    case 'add_line_item':
+        $orderId = isset($_GET['order_id']) ? trim($_GET['order_id']) : '';
+        $name    = isset($_GET['name'])     ? trim(urldecode($_GET['name'])) : '';
+        $price   = isset($_GET['price'])    ? (int)$_GET['price']   : 0;
+        $qty     = isset($_GET['qty'])      ? (int)$_GET['qty']     : 1000;
+        if ($orderId === '' || $name === '') {
+            http_response_code(400);
+            die(json_encode(array('error' => 'Missing order_id or name', 'ver' => SCRIPT_VER)));
+        }
+        $liBody = json_encode(array('name' => $name, 'price' => $price, 'unitQty' => $qty));
+        $ch = curl_init(BASE . '/orders/' . rawurlencode($orderId) . '/line_items');
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $liBody);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+            'Authorization: Bearer ' . TOKEN,
+            'Content-Type: application/json',
+            'Accept: application/json'
+        ));
+        curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+        $liRespBody = curl_exec($ch);
+        $liCode     = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $liErr      = curl_error($ch);
+        curl_close($ch);
+        if ($liErr) {
+            http_response_code(502);
+            die(json_encode(array('error' => 'curl: ' . $liErr, 'ver' => SCRIPT_VER)));
+        }
+        if ($liCode < 200 || $liCode >= 300) {
+            http_response_code(502);
+            die(json_encode(array('error' => 'Clover POST HTTP ' . $liCode, 'detail' => substr($liRespBody, 0, 300), 'ver' => SCRIPT_VER)));
+        }
+        die($liRespBody);
+
     default:
         http_response_code(404);
         die(json_encode(array('error' => 'Unknown action: ' . $action, 'ver' => SCRIPT_VER)));

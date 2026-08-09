@@ -42,6 +42,8 @@ import com.example.stonephopro.utils.clover.CloverConfig
 import com.example.stonephopro.utils.clover.CloverLineItem
 import com.example.stonephopro.utils.clover.CloverOrder
 import com.example.stonephopro.utils.clover.CloverRepository
+import com.example.stonephopro.utils.print.KitchenPrinterConfig
+import com.example.stonephopro.viewmodel.OrderViewModel
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlin.math.roundToInt
@@ -97,7 +99,7 @@ private fun saveClosedTables(ctx: Context, tables: Map<String, Long>) {
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 @Composable
-fun CloverOrderScreen(onBack: () -> Unit) {
+fun CloverOrderScreen(viewModel: OrderViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
 
@@ -344,6 +346,7 @@ fun CloverOrderScreen(onBack: () -> Unit) {
                     selectedOrder?.let { order ->
                         OrderDetailPanel(
                             order          = order,
+                            viewModel      = viewModel,
                             onClose        = { selectedOrder = null },
                             onCloseTable   = { closeTable(order.title) },
                             modifier       = Modifier.fillMaxHeight().weight(0.45f)
@@ -508,6 +511,7 @@ private fun ToGoList(
 @Composable
 private fun OrderDetailPanel(
     order: CloverOrder,
+    viewModel: OrderViewModel,
     onClose: () -> Unit,
     onCloseTable: () -> Unit,
     modifier: Modifier = Modifier
@@ -518,6 +522,7 @@ private fun OrderDetailPanel(
     var showPayDialog      by remember { mutableStateOf(false) }
     var showChangeCalc     by remember { mutableStateOf(false) }
     var showSplitBill      by remember { mutableStateOf(false) }
+    var showAddItems       by remember { mutableStateOf(false) }
     var receivedAmountText by remember { mutableStateOf("") }
 
     val timeStr = remember(order.createdTime) {
@@ -601,6 +606,21 @@ private fun OrderDetailPanel(
             ) {
                 Text("TỔNG CỘNG", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Text(formatCents(order.total), fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF1565C0))
+            }
+
+            // ── Add items to kitchen ──────────────────────────────────────────
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
+            ) {
+                Button3D(
+                    text = "➕ Thêm món & In bếp",
+                    onClick = { showAddItems = true },
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    gradientColors = listOf(Color(0xFFEF6C00), Color(0xFFBF360C)),
+                    fontSize = 13.sp
+                )
             }
 
             // ── Buttons ───────────────────────────────────────────────────────
@@ -806,6 +826,15 @@ private fun OrderDetailPanel(
             },
             title = { Text("Thanh toán Cash") },
             text  = { Text(payResult) }
+        )
+    }
+
+    // ── Add items to kitchen dialog ───────────────────────────────────────────
+    if (showAddItems) {
+        AddItemsToKitchenDialog(
+            order     = order,
+            viewModel = viewModel,
+            onDismiss = { showAddItems = false }
         )
     }
 
@@ -1032,6 +1061,209 @@ private fun SplitBillDialog(
                         modifier       = Modifier.weight(1f).height(46.dp),
                         fontSize       = 12.sp,
                         gradientColors = listOf(Color(0xFF43A047), Color(0xFF1B5E20))
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddItemsToKitchenDialog(
+    order: CloverOrder,
+    viewModel: OrderViewModel,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val scope   = rememberCoroutineScope()
+    val categories = viewModel.categories
+    var selectedTab by remember { mutableStateOf(0) }
+    // kitchenCart: product -> quantity
+    val kitchenCart = remember { mutableStateListOf<Pair<com.example.stonephopro.model.Product, Int>>() }
+    var printStatus by remember { mutableStateOf("") }
+    var isPrinting  by remember { mutableStateOf(false) }
+
+    val currentCatProducts = remember(selectedTab, categories) {
+        if (categories.isEmpty()) emptyList()
+        else viewModel.getAllProducts().filter { it.category == categories.getOrNull(selectedTab)?.name }
+    }
+
+    val cartTotal = kitchenCart.sumOf { (p, q) -> p.price * q }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.9f)
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Header
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFFEF6C00))
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    Text(
+                        "➕ Thêm món — Bàn ${order.title.ifBlank { order.id.takeLast(6) }}",
+                        color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp
+                    )
+                }
+
+                // Category tabs
+                if (categories.isNotEmpty()) {
+                    ScrollableTabRow(
+                        selectedTabIndex = selectedTab,
+                        edgePadding = 8.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        categories.forEachIndexed { idx, cat ->
+                            Tab(
+                                selected = selectedTab == idx,
+                                onClick = { selectedTab = idx },
+                                text = { Text(cat.name, fontSize = 13.sp) }
+                            )
+                        }
+                    }
+                }
+
+                // Product list
+                LazyColumn(modifier = Modifier.weight(1f).padding(8.dp)) {
+                    items(currentCatProducts) { prod ->
+                        val qty = kitchenCart.find { it.first.id == prod.id }?.second ?: 0
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(prod.name, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                Text("${"$%.2f".format(prod.price)}", fontSize = 12.sp, color = Color(0xFF1565C0))
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                if (qty > 0) {
+                                    IconButton(onClick = {
+                                        val idx = kitchenCart.indexOfFirst { it.first.id == prod.id }
+                                        if (idx >= 0) {
+                                            if (kitchenCart[idx].second <= 1) kitchenCart.removeAt(idx)
+                                            else kitchenCart[idx] = kitchenCart[idx].copy(second = kitchenCart[idx].second - 1)
+                                        }
+                                    }, modifier = Modifier.size(32.dp)) { Text("➖", fontSize = 16.sp) }
+                                    Text("$qty", fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(20.dp), textAlign = TextAlign.Center)
+                                }
+                                IconButton(onClick = {
+                                    val idx = kitchenCart.indexOfFirst { it.first.id == prod.id }
+                                    if (idx >= 0) kitchenCart[idx] = kitchenCart[idx].copy(second = kitchenCart[idx].second + 1)
+                                    else kitchenCart.add(Pair(prod, 1))
+                                }, modifier = Modifier.size(32.dp)) { Text("➕", fontSize = 16.sp) }
+                            }
+                        }
+                        HorizontalDivider(color = Color(0xFFEEEEEE))
+                    }
+                }
+
+                // Cart summary + print
+                if (kitchenCart.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFFFF3E0))
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        kitchenCart.forEach { (prod, qty) ->
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("${qty}x ${prod.name}", fontSize = 12.sp)
+                                Text("${"$%.2f".format(prod.price * qty)}", fontSize = 12.sp)
+                            }
+                        }
+                        HorizontalDivider()
+                        Text("Tổng: ${"$%.2f".format(cartTotal)}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+                }
+
+                if (printStatus.isNotEmpty()) {
+                    Text(printStatus, modifier = Modifier.padding(horizontal = 12.dp), fontSize = 12.sp, color = if (printStatus.startsWith("✅")) Color(0xFF2E7D32) else Color(0xFFC62828))
+                }
+
+                // Action buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button3D(
+                        text = "Hủy",
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        gradientColors = listOf(Color(0xFF78909C), Color(0xFF546E7A)),
+                        fontSize = 13.sp
+                    )
+                    val canPrint = kitchenCart.isNotEmpty() && !isPrinting
+                    Button3D(
+                        text = if (isPrinting) "⏳ Đang in..." else "🖨️ In bếp",
+                        onClick = {
+                            if (!canPrint) return@Button3D
+                            isPrinting = true
+                            printStatus = ""
+                            scope.launch {
+                                try {
+                                    // Group by zone and print
+                                    val grouped = mutableMapOf<KitchenPrinterConfig.Zone, MutableList<Pair<com.example.stonephopro.model.Product, Int>>>()
+                                    kitchenCart.forEach { item ->
+                                        val zone = KitchenPrinterConfig.getCategoryZone(context, item.first.category)
+                                        grouped.getOrPut(zone) { mutableListOf() }.add(item)
+                                    }
+                                    var printedZones = 0
+                                    grouped.forEach { (zone, items) ->
+                                        val ipPort = KitchenPrinterConfig.getIpPort(context, zone)
+                                        if (ipPort.isNotBlank()) {
+                                            val parsed = KitchenPrinterConfig.parseIpPort(ipPort)
+                                            if (parsed != null) {
+                                                val (ip, port) = parsed
+                                                val timeStr = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())
+                                                val ticket = buildString {
+                                                    appendLine()
+                                                    appendLine("=== ${zone.emoji} ${zone.label} KITCHEN ===")
+                                                    appendLine("Table: ${order.title.ifBlank { order.id.takeLast(6) }}")
+                                                    appendLine("Time : $timeStr")
+                                                    appendLine("----------------------------")
+                                                    items.forEach { (p, q) -> appendLine("${q}x  ${p.name}") }
+                                                    appendLine("============================")
+                                                    appendLine(); appendLine(); appendLine()
+                                                }
+                                                SocketPrinter.printText(ip, port, ticket)
+                                                printedZones++
+                                            }
+                                        }
+                                    }
+                                    // Add to Clover order
+                                    kitchenCart.forEach { (prod, qty) ->
+                                        CloverRepository.addLineItemViaProxy(
+                                            CloverConfig.PROXY_SECRET,
+                                            order.id,
+                                            prod.name,
+                                            (prod.price * 100).toLong(),
+                                            qty * 1000
+                                        )
+                                    }
+                                    printStatus = if (printedZones > 0) "✅ Đã in $printedZones bếp + gửi Clover" else "⚠️ Chưa cấu hình IP máy in bếp"
+                                    if (printedZones > 0) kitchenCart.clear()
+                                } catch (e: Exception) {
+                                    printStatus = "❌ Lỗi: ${e.message?.take(60)}"
+                                } finally {
+                                    isPrinting = false
+                                }
+                            }
+                        },
+                        modifier = Modifier.weight(2f).height(48.dp),
+                        gradientColors = if (canPrint) listOf(Color(0xFFEF6C00), Color(0xFFBF360C)) else listOf(Color(0xFF9E9E9E), Color(0xFF757575)),
+                        fontSize = 13.sp
                     )
                 }
             }

@@ -39,6 +39,7 @@ fun OrderScreen(viewModel: OrderViewModel) {
     var showInventoryScreen by remember { mutableStateOf(false) }
     var showCloverScreen by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var showKitchenPrinterSettings by remember { mutableStateOf(false) }
     var showManageMenu by remember { mutableStateOf(false) }
     var showInvoiceScreen by remember { mutableStateOf(false) }
     var showWeeklyScreen by remember { mutableStateOf(false) }
@@ -80,7 +81,14 @@ fun OrderScreen(viewModel: OrderViewModel) {
                 )
         ) {
             when {
-                showSettings -> PrinterSettingsScreen(onBack = { showSettings = false })
+                showKitchenPrinterSettings -> KitchenPrinterSettingsScreen(
+                    categories = viewModel.categories.map { it.name },
+                    onBack = { showKitchenPrinterSettings = false }
+                )
+                showSettings -> PrinterSettingsScreen(
+                    onKitchenSettings = { showKitchenPrinterSettings = true },
+                    onBack = { showSettings = false }
+                )
                 showManageMenu -> ManageMenuScreen(viewModel = viewModel, onBack = { showManageMenu = false })
                 showWeeklyScreen -> WeeklyIncomeScreen(
                     onBack = { showWeeklyScreen = false }
@@ -94,6 +102,7 @@ fun OrderScreen(viewModel: OrderViewModel) {
                     onBack = { showInventoryScreen = false },
                 )
                 showCloverScreen -> CloverOrderScreen(
+                    viewModel = viewModel,
                     onBack = { showCloverScreen = false }
                 )
                 else -> {

@@ -114,6 +114,23 @@ object CloverRepository {
         }
     }
 
+    suspend fun addLineItemViaProxy(
+        proxyToken: String,
+        orderId: String,
+        name: String,
+        priceCents: Long,
+        qty: Int = 1000
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val encodedName = java.net.URLEncoder.encode(name, "UTF-8")
+            val url = "${CloverConfig.PROXY_URL}?action=add_line_item" +
+                "&order_id=${java.net.URLEncoder.encode(orderId, "UTF-8")}" +
+                "&name=$encodedName&price=$priceCents&qty=$qty"
+            val (code, _) = httpGet(url, proxyToken)
+            if (code !in 200..299) error("add_line_item HTTP $code")
+        }
+    }
+
     // ── Chế độ DIRECT: gọi thẳng Clover API (cần OAuth token) ────────────────
     suspend fun fetchOpenOrders(
         baseUrl: String,

@@ -40,7 +40,7 @@ private fun isWifiConnected(context: Context): Boolean {
 
 @RequiresApi(Build.VERSION_CODES.N)
 @Composable
-fun PrinterSettingsScreen(onBack: () -> Unit) {
+fun PrinterSettingsScreen(onKitchenSettings: () -> Unit, onBack: () -> Unit) {
     val printers = remember { mutableStateListOf<String>() }
     var isSearching by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
@@ -154,7 +154,15 @@ fun PrinterSettingsScreen(onBack: () -> Unit) {
             Text(status)
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+        Button3D(
+            text = "🍳 Kitchen Printer Settings",
+            onClick = onKitchenSettings,
+            modifier = Modifier.height(50.dp),
+            fontSize = 16.sp,
+            gradientColors = listOf(Color(0xFFEF6C00), Color(0xFFBF360C))
+        )
+        Spacer(modifier = Modifier.height(8.dp))
         Button3D(
             text = "⬅ Quay lại",
             onClick = {
