@@ -1305,45 +1305,58 @@ private fun AddItemsToKitchenDialog(
                             printStatus = ""
                             scope.launch {
                                 try {
-                                    // Resolve order ID — create new order on Clover if table was empty
+                                    val steps = mutableListOf<String>()
+
+                                    // ── STEP 1: Resolve / create Clover order ─────
                                     val orderId: String = if (existingOrderId != null) {
+                                        steps.add("📋 Order hiện có: …${existingOrderId.takeLast(8)}")
                                         existingOrderId
                                     } else {
+                                        steps.add("🔄 Tạo order Clover cho bàn $tableTitle…")
+                                        printStatus = steps.joinToString("\n")
                                         val newId = CloverRepository.createOrderViaProxy(
                                             CloverConfig.PROXY_SECRET, tableTitle
                                         ).getOrElse { e ->
-                                            printStatus = "❌ Không tạo được order Clover: ${e.message?.take(60)}"
+                                            steps.add("❌ Tạo order thất bại: ${e.message?.take(80)}")
+                                            printStatus = steps.joinToString("\n")
                                             isPrinting = false
                                             return@launch
                                         }
-                                        // Save local mapping: orderId → tableTitle
-                                        // (Clover may return blank title for REST-created orders)
+                                        steps.add("✅ Order tạo OK · ID: …${newId.takeLast(8)}")
                                         saveOrderTableMapping(context, newId, tableTitle)
+                                        steps.add("💾 Lưu mapping local: $newId → $tableTitle")
+                                        printStatus = steps.joinToString("\n")
                                         newId
                                     }
 
-                                    // ── Group by zone ────────────────────────────
-                                    val grouped = mutableMapOf<KitchenPrinterConfig.Zone, MutableList<Pair<com.example.stonephopro.model.Product, Int>>>()
-                                    kitchenCart.forEach { item ->
+                                    // ── STEP 2: Group cart by kitchen zone ────────
+                                    val grouped = mutableMapOf<KitchenPrinterConfig.Zone,
+                                        MutableList<Pair<com.example.stonephopro.model.Product, Int>>>()
+                                    for (item in kitchenCart) {
                                         val zone = KitchenPrinterConfig.getCategoryZone(context, item.first.category)
                                         grouped.getOrPut(zone) { mutableListOf() }.add(item)
                                     }
+                                    steps.add("🗂️ ${kitchenCart.size} món → ${grouped.size} zone: ${grouped.keys.joinToString { it.label }}")
+                                    printStatus = steps.joinToString("\n")
 
-                                    // ── Print to each zone — independent try/catch ─
+                                    // ── STEP 3: Print to each zone ────────────────
                                     var printedZones = 0
-                                    val log = mutableListOf<String>()
-                                    grouped.forEach { (zone, items) ->
+                                    for ((zone, items) in grouped) {
                                         val ipPort = KitchenPrinterConfig.getIpPort(context, zone)
                                         if (ipPort.isBlank()) {
-                                            log.add("⚠️ ${zone.label}: chưa cấu hình IP")
-                                            return@forEach
+                                            steps.add("⚠️ ${zone.label}: chưa cấu hình IP")
+                                            printStatus = steps.joinToString("\n")
+                                            continue
                                         }
                                         val parsed = KitchenPrinterConfig.parseIpPort(ipPort)
                                         if (parsed == null) {
-                                            log.add("⚠️ ${zone.label}: IP không hợp lệ")
-                                            return@forEach
+                                            steps.add("⚠️ ${zone.label}: IP không hợp lệ ($ipPort)")
+                                            printStatus = steps.joinToString("\n")
+                                            continue
                                         }
                                         val (ip, port) = parsed
+                                        steps.add("🔄 ${zone.label}: kết nối $ip:$port…")
+                                        printStatus = steps.joinToString("\n")
                                         try {
                                             val timeStr = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())
                                             val ticket = buildString {
@@ -1352,22 +1365,26 @@ private fun AddItemsToKitchenDialog(
                                                 appendLine("Table: $tableTitle")
                                                 appendLine("Time : $timeStr")
                                                 appendLine("----------------------------")
-                                                items.forEach { (p, q) -> appendLine("${q}x  ${p.name}") }
+                                                for ((p, q) in items) appendLine("${q}x  ${p.name}")
                                                 appendLine("============================")
                                                 appendLine(); appendLine(); appendLine()
                                             }
+                                            val byteCount = ticket.toByteArray(Charsets.US_ASCII).size
                                             SocketPrinter.printText(ip, port, ticket)
                                             printedZones++
-                                            log.add("✅ ${zone.label}: $ip")
+                                            steps.add("✅ ${zone.label}: OK ($byteCount bytes gửi)")
                                         } catch (e: Exception) {
-                                            log.add("❌ ${zone.label} ($ip): ${e.message?.take(40)}")
+                                            steps.add("❌ ${zone.label} $ip:$port → ${e.javaClass.simpleName}: ${e.message?.take(60)}")
                                         }
+                                        printStatus = steps.joinToString("\n")
                                     }
 
-                                    // ── Add items to Clover order ─────────────────
+                                    // ── STEP 4: Add items to Clover order ─────────
+                                    steps.add("🔄 Ghi ${kitchenCart.size} món vào Clover…")
+                                    printStatus = steps.joinToString("\n")
                                     var cloverOk   = 0
                                     var cloverFail = 0
-                                    kitchenCart.forEach { (prod, qty) ->
+                                    for ((prod, qty) in kitchenCart) {
                                         CloverRepository.addLineItemViaProxy(
                                             CloverConfig.PROXY_SECRET,
                                             orderId,
@@ -1376,25 +1393,29 @@ private fun AddItemsToKitchenDialog(
                                             qty * 1000
                                         ).fold(
                                             onSuccess = { cloverOk++ },
-                                            onFailure = { cloverFail++ }
+                                            onFailure = { e -> cloverFail++; steps.add("  ❌ ${prod.name}: ${e.message?.take(40)}") }
                                         )
                                     }
+                                    when {
+                                        cloverOk > 0 && cloverFail == 0 -> steps.add("✅ Clover: $cloverOk món đã ghi vào order …${orderId.takeLast(8)}")
+                                        cloverFail > 0 -> steps.add("⚠️ Clover: $cloverOk OK · $cloverFail lỗi")
+                                        else -> steps.add("⚠️ Clover: không ghi được")
+                                    }
+                                    printStatus = steps.joinToString("\n")
 
-                                    // ── Build status message ──────────────────────
-                                    printStatus = buildString {
-                                        log.forEach { appendLine(it) }
-                                        when {
-                                            cloverOk > 0 && cloverFail == 0 -> appendLine("✅ Clover: $cloverOk món đã ghi")
-                                            cloverFail > 0 -> appendLine("❌ Clover: $cloverFail lỗi · $cloverOk thành công")
-                                            else -> appendLine("⚠️ Clover: không gửi được")
-                                        }
-                                        if (existingOrderId == null) appendLine("ℹ️ Bàn sẽ hiện xanh trong app sau vài giây")
-                                    }.trim()
-
+                                    // ── STEP 5: Cleanup & reload ──────────────────
                                     if (printedZones > 0) {
                                         kitchenCart.clear()
-                                        // Trigger floor plan reload so table turns blue
-                                        if (existingOrderId == null) onOrderCreated?.invoke()
+                                        if (existingOrderId == null) {
+                                            steps.add("🔄 Reload floor plan…")
+                                            printStatus = steps.joinToString("\n")
+                                            onOrderCreated?.invoke()
+                                            steps.add("✅ Bàn $tableTitle sẽ hiện xanh")
+                                            printStatus = steps.joinToString("\n")
+                                        }
+                                    } else {
+                                        steps.add("⚠️ Không in được bếp nào — kiểm tra IP trong Settings")
+                                        printStatus = steps.joinToString("\n")
                                     }
                                 } catch (e: Exception) {
                                     printStatus = "❌ Lỗi: ${e.message?.take(60)}"
