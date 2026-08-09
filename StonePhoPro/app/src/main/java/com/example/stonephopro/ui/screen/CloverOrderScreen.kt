@@ -103,14 +103,16 @@ fun CloverOrderScreen(viewModel: OrderViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
 
-    var openOrders      by remember { mutableStateOf<List<CloverOrder>>(emptyList()) }
-    var isFirstLoad     by remember { mutableStateOf(true) }
-    var isRefreshing    by remember { mutableStateOf(false) }
-    var errorMsg        by remember { mutableStateOf("") }
-    var selectedOrder   by remember { mutableStateOf<CloverOrder?>(null) }
-    var selectedTab     by remember { mutableStateOf(0) }
-    var closedTables    by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
-    var todayCashTotal  by remember { mutableStateOf(0.0) }
+    var openOrders        by remember { mutableStateOf<List<CloverOrder>>(emptyList()) }
+    var isFirstLoad       by remember { mutableStateOf(true) }
+    var isRefreshing      by remember { mutableStateOf(false) }
+    var errorMsg          by remember { mutableStateOf("") }
+    var selectedOrder     by remember { mutableStateOf<CloverOrder?>(null) }
+    var selectedTab       by remember { mutableStateOf(0) }
+    var closedTables      by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
+    var todayCashTotal    by remember { mutableStateOf(0.0) }
+    var selectedSlotTitle by remember { mutableStateOf<String?>(null) }
+    var showAddItemsEmpty by remember { mutableStateOf(false) }
 
     // Load locally closed tables from SharedPreferences on start
     LaunchedEffect(Unit) {
@@ -311,6 +313,16 @@ fun CloverOrderScreen(viewModel: OrderViewModel, onBack: () -> Unit) {
                 }
             }
 
+            // Empty-table: Add Items dialog (no existing order — create new)
+            if (showAddItemsEmpty && selectedSlotTitle != null) {
+                AddItemsToKitchenDialog(
+                    tableTitle      = selectedSlotTitle!!,
+                    existingOrderId = null,
+                    viewModel       = viewModel,
+                    onDismiss       = { showAddItemsEmpty = false; selectedSlotTitle = null }
+                )
+            }
+
             Row(modifier = Modifier.fillMaxSize().background(Color.White)) {
                 val mapWeight = if (selectedOrder != null) 0.55f else 1f
                 Box(
@@ -322,10 +334,22 @@ fun CloverOrderScreen(viewModel: OrderViewModel, onBack: () -> Unit) {
                 ) {
                     when (selectedTab) {
                         0 -> DiningFloorPlan(
-                            tableOrderMap = tableOrderMap,
-                            selectedOrder = selectedOrder,
-                            onTableClick  = { order ->
-                                selectedOrder = if (selectedOrder?.id == order?.id) null else order
+                            tableOrderMap     = tableOrderMap,
+                            selectedOrder     = selectedOrder,
+                            selectedSlotTitle = selectedSlotTitle,
+                            onTableClick      = { order, slotTitle ->
+                                if (order != null) {
+                                    selectedOrder     = if (selectedOrder?.id == order.id) null else order
+                                    selectedSlotTitle = null
+                                } else {
+                                    selectedOrder = null
+                                    if (selectedSlotTitle == slotTitle) {
+                                        selectedSlotTitle = null
+                                    } else {
+                                        selectedSlotTitle = slotTitle
+                                        showAddItemsEmpty = true
+                                    }
+                                }
                             }
                         )
                         else -> ToGoList(
@@ -363,7 +387,8 @@ fun CloverOrderScreen(viewModel: OrderViewModel, onBack: () -> Unit) {
 private fun DiningFloorPlan(
     tableOrderMap: Map<String, CloverOrder>,
     selectedOrder: CloverOrder?,
-    onTableClick: (CloverOrder?) -> Unit
+    selectedSlotTitle: String?,
+    onTableClick: (CloverOrder?, String) -> Unit
 ) {
     val slotMap = remember { DINING_ROOM_LAYOUT.associateBy { Pair(it.row, it.col) } }
 
@@ -387,13 +412,15 @@ private fun DiningFloorPlan(
                         val slot  = slotMap[Pair(row, col)]
                         val order = slot?.let { tableOrderMap[it.cloverTitle] }
                         if (slot != null) {
+                            val isSelected = (order != null && selectedOrder?.id == order.id) ||
+                                             (order == null && slot.cloverTitle == selectedSlotTitle)
                             TableCell(
                                 label      = slot.name,
                                 seats      = slot.seats,
                                 isOccupied = order != null,
-                                isSelected = order != null && selectedOrder?.id == order.id,
+                                isSelected = isSelected,
                                 total      = order?.total,
-                                onClick    = { onTableClick(order) },
+                                onClick    = { onTableClick(order, slot.cloverTitle) },
                                 modifier   = Modifier.size(cellSize)
                             )
                         } else {
@@ -832,9 +859,10 @@ private fun OrderDetailPanel(
     // ── Add items to kitchen dialog ───────────────────────────────────────────
     if (showAddItems) {
         AddItemsToKitchenDialog(
-            order     = order,
-            viewModel = viewModel,
-            onDismiss = { showAddItems = false }
+            tableTitle      = order.title.ifBlank { order.id.takeLast(6) },
+            existingOrderId = order.id,
+            viewModel       = viewModel,
+            onDismiss       = { showAddItems = false }
         )
     }
 
@@ -1070,7 +1098,8 @@ private fun SplitBillDialog(
 
 @Composable
 private fun AddItemsToKitchenDialog(
-    order: CloverOrder,
+    tableTitle: String,         // display name / Clover title of the table
+    existingOrderId: String?,   // null = create a new Clover order first
     viewModel: OrderViewModel,
     onDismiss: () -> Unit
 ) {
@@ -1078,7 +1107,6 @@ private fun AddItemsToKitchenDialog(
     val scope   = rememberCoroutineScope()
     val categories = viewModel.categories
     var selectedTab by remember { mutableStateOf(0) }
-    // kitchenCart: product -> quantity
     val kitchenCart = remember { mutableStateListOf<Pair<com.example.stonephopro.model.Product, Int>>() }
     var printStatus by remember { mutableStateOf("") }
     var isPrinting  by remember { mutableStateOf(false) }
@@ -1106,7 +1134,7 @@ private fun AddItemsToKitchenDialog(
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
                     Text(
-                        "➕ Thêm món — Bàn ${order.title.ifBlank { order.id.takeLast(6) }}",
+                        "➕ Thêm món — Bàn $tableTitle",
                         color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp
                     )
                 }
@@ -1213,6 +1241,19 @@ private fun AddItemsToKitchenDialog(
                             printStatus = ""
                             scope.launch {
                                 try {
+                                    // Resolve order ID — create new order if needed
+                                    val orderId: String = if (existingOrderId != null) {
+                                        existingOrderId
+                                    } else {
+                                        CloverRepository.createOrderViaProxy(
+                                            CloverConfig.PROXY_SECRET, tableTitle
+                                        ).getOrElse { e ->
+                                            printStatus = "❌ Không tạo được order: ${e.message?.take(60)}"
+                                            isPrinting = false
+                                            return@launch
+                                        }
+                                    }
+
                                     // Group by zone and print
                                     val grouped = mutableMapOf<KitchenPrinterConfig.Zone, MutableList<Pair<com.example.stonephopro.model.Product, Int>>>()
                                     kitchenCart.forEach { item ->
@@ -1230,7 +1271,7 @@ private fun AddItemsToKitchenDialog(
                                                 val ticket = buildString {
                                                     appendLine()
                                                     appendLine("=== ${zone.emoji} ${zone.label} KITCHEN ===")
-                                                    appendLine("Table: ${order.title.ifBlank { order.id.takeLast(6) }}")
+                                                    appendLine("Table: $tableTitle")
                                                     appendLine("Time : $timeStr")
                                                     appendLine("----------------------------")
                                                     items.forEach { (p, q) -> appendLine("${q}x  ${p.name}") }
@@ -1242,11 +1283,11 @@ private fun AddItemsToKitchenDialog(
                                             }
                                         }
                                     }
-                                    // Add to Clover order
+                                    // Add items to Clover order
                                     kitchenCart.forEach { (prod, qty) ->
                                         CloverRepository.addLineItemViaProxy(
                                             CloverConfig.PROXY_SECRET,
-                                            order.id,
+                                            orderId,
                                             prod.name,
                                             (prod.price * 100).toLong(),
                                             qty * 1000

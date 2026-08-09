@@ -234,6 +234,42 @@ switch ($action) {
             'ver'    => SCRIPT_VER
         )));
 
+    case 'create_order':
+        $title = isset($_GET['title']) ? trim(urldecode($_GET['title'])) : '';
+        if ($title === '') {
+            http_response_code(400);
+            die(json_encode(array('error' => 'Missing title', 'ver' => SCRIPT_VER)));
+        }
+        $coBody = json_encode(array('title' => $title));
+        $ch = curl_init(BASE . '/orders');
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $coBody);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+            'Authorization: Bearer ' . TOKEN,
+            'Content-Type: application/json',
+            'Accept: application/json'
+        ));
+        curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+        $coRespBody = curl_exec($ch);
+        $coCode     = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $coErr      = curl_error($ch);
+        curl_close($ch);
+        if ($coErr) {
+            http_response_code(502);
+            die(json_encode(array('error' => 'curl: ' . $coErr, 'ver' => SCRIPT_VER)));
+        }
+        if ($coCode < 200 || $coCode >= 300) {
+            http_response_code(502);
+            die(json_encode(array(
+                'error'  => 'Clover POST HTTP ' . $coCode,
+                'detail' => substr($coRespBody, 0, 300),
+                'ver'    => SCRIPT_VER
+            )));
+        }
+        die($coRespBody);
+
     case 'add_line_item':
         $orderId = isset($_GET['order_id']) ? trim($_GET['order_id']) : '';
         $name    = isset($_GET['name'])     ? trim(urldecode($_GET['name'])) : '';

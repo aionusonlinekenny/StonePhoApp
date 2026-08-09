@@ -114,6 +114,20 @@ object CloverRepository {
         }
     }
 
+    suspend fun createOrderViaProxy(
+        proxyToken: String,
+        tableTitle: String
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val encodedTitle = java.net.URLEncoder.encode(tableTitle, "UTF-8")
+            val url = "${CloverConfig.PROXY_URL}?action=create_order&title=$encodedTitle"
+            val (code, body) = httpGet(url, proxyToken)
+            if (code !in 200..299) error("create_order HTTP $code")
+            val json = com.google.gson.JsonParser.parseString(body).asJsonObject
+            json.get("id")?.asString ?: error("No id in response")
+        }
+    }
+
     suspend fun addLineItemViaProxy(
         proxyToken: String,
         orderId: String,
