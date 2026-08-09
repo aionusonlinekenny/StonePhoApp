@@ -1139,6 +1139,24 @@ private fun AddItemsToKitchenDialog(
                     )
                 }
 
+                // Banner cảnh báo khi bàn trống (existingOrderId == null)
+                if (existingOrderId == null) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFFFF3E0))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "⚠️ Bàn chưa mở trên Clover POS. App chỉ in bếp — vui lòng mở bàn trên Clover POS sau khi in.",
+                            fontSize = 12.sp,
+                            color = Color(0xFF5D4037),
+                            lineHeight = 17.sp
+                        )
+                    }
+                }
+
                 // Category tabs
                 if (categories.isNotEmpty()) {
                     ScrollableTabRow(
@@ -1247,18 +1265,6 @@ private fun AddItemsToKitchenDialog(
                             printStatus = ""
                             scope.launch {
                                 try {
-                                    // Resolve order ID — create new order if needed
-                                    val orderId: String = if (existingOrderId != null) {
-                                        existingOrderId
-                                    } else {
-                                        CloverRepository.createOrderViaProxy(
-                                            CloverConfig.PROXY_SECRET, tableTitle
-                                        ).getOrElse { e ->
-                                            printStatus = "❌ Không tạo được order: ${e.message?.take(60)}"
-                                            isPrinting = false
-                                            return@launch
-                                        }
-                                    }
 
                                     // ── Group by zone ────────────────────────────
                                     val grouped = mutableMapOf<KitchenPrinterConfig.Zone, MutableList<Pair<com.example.stonephopro.model.Product, Int>>>()
@@ -1302,28 +1308,31 @@ private fun AddItemsToKitchenDialog(
                                         }
                                     }
 
-                                    // ── Add items to Clover — check each result ───
+                                    // ── Add items to Clover (chỉ khi đã có order) ─
                                     var cloverOk   = 0
                                     var cloverFail = 0
-                                    kitchenCart.forEach { (prod, qty) ->
-                                        CloverRepository.addLineItemViaProxy(
-                                            CloverConfig.PROXY_SECRET,
-                                            orderId,
-                                            prod.name,
-                                            (prod.price * 100).toLong(),
-                                            qty * 1000
-                                        ).fold(
-                                            onSuccess = { cloverOk++ },
-                                            onFailure = { cloverFail++ }
-                                        )
+                                    if (existingOrderId != null) {
+                                        kitchenCart.forEach { (prod, qty) ->
+                                            CloverRepository.addLineItemViaProxy(
+                                                CloverConfig.PROXY_SECRET,
+                                                existingOrderId,
+                                                prod.name,
+                                                (prod.price * 100).toLong(),
+                                                qty * 1000
+                                            ).fold(
+                                                onSuccess = { cloverOk++ },
+                                                onFailure = { cloverFail++ }
+                                            )
+                                        }
                                     }
 
                                     // ── Build status message ──────────────────────
                                     printStatus = buildString {
                                         log.forEach { appendLine(it) }
                                         when {
+                                            existingOrderId == null -> appendLine("ℹ️ Bàn trống: chỉ in bếp, không gửi Clover")
                                             cloverOk > 0 && cloverFail == 0 -> appendLine("✅ Clover: $cloverOk món đã ghi")
-                                            cloverFail > 0 -> appendLine("❌ Clover: $cloverFail lỗi · $cloverOk thành công\n⚠️ Kiểm tra PHP đã upload chưa")
+                                            cloverFail > 0 -> appendLine("❌ Clover: $cloverFail lỗi · $cloverOk thành công")
                                             else -> appendLine("⚠️ Clover: không gửi được")
                                         }
                                     }.trim()
