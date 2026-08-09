@@ -1217,7 +1217,13 @@ private fun AddItemsToKitchenDialog(
                 }
 
                 if (printStatus.isNotEmpty()) {
-                    Text(printStatus, modifier = Modifier.padding(horizontal = 12.dp), fontSize = 12.sp, color = if (printStatus.startsWith("✅")) Color(0xFF2E7D32) else Color(0xFFC62828))
+                    Text(
+                        printStatus,
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        fontSize  = 12.sp,
+                        color     = Color(0xFF424242),
+                        lineHeight = 18.sp
+                    )
                 }
 
                 // Action buttons
@@ -1254,36 +1260,51 @@ private fun AddItemsToKitchenDialog(
                                         }
                                     }
 
-                                    // Group by zone and print
+                                    // ── Group by zone ────────────────────────────
                                     val grouped = mutableMapOf<KitchenPrinterConfig.Zone, MutableList<Pair<com.example.stonephopro.model.Product, Int>>>()
                                     kitchenCart.forEach { item ->
                                         val zone = KitchenPrinterConfig.getCategoryZone(context, item.first.category)
                                         grouped.getOrPut(zone) { mutableListOf() }.add(item)
                                     }
+
+                                    // ── Print to each zone — independent try/catch ─
                                     var printedZones = 0
+                                    val log = mutableListOf<String>()
                                     grouped.forEach { (zone, items) ->
                                         val ipPort = KitchenPrinterConfig.getIpPort(context, zone)
-                                        if (ipPort.isNotBlank()) {
-                                            val parsed = KitchenPrinterConfig.parseIpPort(ipPort)
-                                            if (parsed != null) {
-                                                val (ip, port) = parsed
-                                                val timeStr = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())
-                                                val ticket = buildString {
-                                                    appendLine()
-                                                    appendLine("=== ${zone.emoji} ${zone.label} KITCHEN ===")
-                                                    appendLine("Table: $tableTitle")
-                                                    appendLine("Time : $timeStr")
-                                                    appendLine("----------------------------")
-                                                    items.forEach { (p, q) -> appendLine("${q}x  ${p.name}") }
-                                                    appendLine("============================")
-                                                    appendLine(); appendLine(); appendLine()
-                                                }
-                                                SocketPrinter.printText(ip, port, ticket)
-                                                printedZones++
+                                        if (ipPort.isBlank()) {
+                                            log.add("⚠️ ${zone.label}: chưa cấu hình IP")
+                                            return@forEach
+                                        }
+                                        val parsed = KitchenPrinterConfig.parseIpPort(ipPort)
+                                        if (parsed == null) {
+                                            log.add("⚠️ ${zone.label}: IP không hợp lệ")
+                                            return@forEach
+                                        }
+                                        val (ip, port) = parsed
+                                        try {
+                                            val timeStr = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())
+                                            val ticket = buildString {
+                                                appendLine()
+                                                appendLine("=== ${zone.emoji} ${zone.label} KITCHEN ===")
+                                                appendLine("Table: $tableTitle")
+                                                appendLine("Time : $timeStr")
+                                                appendLine("----------------------------")
+                                                items.forEach { (p, q) -> appendLine("${q}x  ${p.name}") }
+                                                appendLine("============================")
+                                                appendLine(); appendLine(); appendLine()
                                             }
+                                            SocketPrinter.printText(ip, port, ticket)
+                                            printedZones++
+                                            log.add("✅ ${zone.label}: $ip")
+                                        } catch (e: Exception) {
+                                            log.add("❌ ${zone.label} ($ip): ${e.message?.take(40)}")
                                         }
                                     }
-                                    // Add items to Clover order
+
+                                    // ── Add items to Clover — check each result ───
+                                    var cloverOk   = 0
+                                    var cloverFail = 0
                                     kitchenCart.forEach { (prod, qty) ->
                                         CloverRepository.addLineItemViaProxy(
                                             CloverConfig.PROXY_SECRET,
@@ -1291,9 +1312,22 @@ private fun AddItemsToKitchenDialog(
                                             prod.name,
                                             (prod.price * 100).toLong(),
                                             qty * 1000
+                                        ).fold(
+                                            onSuccess = { cloverOk++ },
+                                            onFailure = { cloverFail++ }
                                         )
                                     }
-                                    printStatus = if (printedZones > 0) "✅ Đã in $printedZones bếp + gửi Clover" else "⚠️ Chưa cấu hình IP máy in bếp"
+
+                                    // ── Build status message ──────────────────────
+                                    printStatus = buildString {
+                                        log.forEach { appendLine(it) }
+                                        when {
+                                            cloverOk > 0 && cloverFail == 0 -> appendLine("✅ Clover: $cloverOk món đã ghi")
+                                            cloverFail > 0 -> appendLine("❌ Clover: $cloverFail lỗi · $cloverOk thành công\n⚠️ Kiểm tra PHP đã upload chưa")
+                                            else -> appendLine("⚠️ Clover: không gửi được")
+                                        }
+                                    }.trim()
+
                                     if (printedZones > 0) kitchenCart.clear()
                                 } catch (e: Exception) {
                                     printStatus = "❌ Lỗi: ${e.message?.take(60)}"
