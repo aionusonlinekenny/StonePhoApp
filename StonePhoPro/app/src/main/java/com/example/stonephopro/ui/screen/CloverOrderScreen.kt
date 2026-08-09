@@ -221,7 +221,7 @@ fun CloverOrderScreen(onBack: () -> Unit) {
                         Text(
                             "💵 Cash hôm nay: ${"$%,.2f".format(todayCashTotal)}",
                             style = TextStyle(
-                                fontSize = 14.sp,
+                                fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
                                 brush = Brush.linearGradient(
                                     colors = listOf(Color.Magenta, Color.Cyan)
