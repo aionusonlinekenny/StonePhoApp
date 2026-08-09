@@ -76,8 +76,9 @@ private const val GRID_ROWS = 6
 private const val GRID_COLS = 6
 
 // ── SharedPreferences helpers for local closed-table tracking ─────────────────
-private const val PREFS_NAME   = "clover_local"
-private const val KEY_CLOSED   = "closed_tables"
+private const val PREFS_NAME    = "clover_local"
+private const val KEY_CLOSED    = "closed_tables"
+private const val KEY_ORDER_TBL = "order_table_map"   // orderId → tableTitle
 private const val SIXTEEN_HOURS = 16L * 60 * 60 * 1000
 
 private fun loadClosedTables(ctx: Context): Map<String, Long> {
@@ -86,7 +87,6 @@ private fun loadClosedTables(ctx: Context): Map<String, Long> {
     return try {
         val type = object : TypeToken<Map<String, Long>>() {}.type
         val raw: Map<String, Long>? = Gson().fromJson(json, type)
-        // Purge entries older than 16 hours (yesterday's closings)
         val cutoff = System.currentTimeMillis() - SIXTEEN_HOURS
         raw?.filter { it.value > cutoff } ?: emptyMap()
     } catch (e: Exception) { emptyMap() }
@@ -95,6 +95,35 @@ private fun loadClosedTables(ctx: Context): Map<String, Long> {
 private fun saveClosedTables(ctx: Context, tables: Map<String, Long>) {
     ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         .edit().putString(KEY_CLOSED, Gson().toJson(tables)).apply()
+}
+
+// Lưu mapping orderId → tableTitle khi tạo order qua REST (Clover có thể không trả title)
+private fun saveOrderTableMapping(ctx: Context, orderId: String, tableTitle: String) {
+    val prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val type  = object : TypeToken<MutableMap<String, String>>() {}.type
+    val map: MutableMap<String, String> = try {
+        Gson().fromJson(prefs.getString(KEY_ORDER_TBL, null), type) ?: mutableMapOf()
+    } catch (e: Exception) { mutableMapOf() }
+    map[orderId] = tableTitle
+    prefs.edit().putString(KEY_ORDER_TBL, Gson().toJson(map)).apply()
+}
+
+private fun removeOrderTableMapping(ctx: Context, orderId: String) {
+    val prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val type  = object : TypeToken<MutableMap<String, String>>() {}.type
+    val map: MutableMap<String, String> = try {
+        Gson().fromJson(prefs.getString(KEY_ORDER_TBL, null), type) ?: return
+    } catch (e: Exception) { return }
+    map.remove(orderId)
+    prefs.edit().putString(KEY_ORDER_TBL, Gson().toJson(map)).apply()
+}
+
+private fun loadOrderTableMapping(ctx: Context): Map<String, String> {
+    val prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val type  = object : TypeToken<Map<String, String>>() {}.type
+    return try {
+        Gson().fromJson(prefs.getString(KEY_ORDER_TBL, null), type) ?: emptyMap()
+    } catch (e: Exception) { emptyMap() }
 }
 
 // ── Main screen ───────────────────────────────────────────────────────────────
@@ -140,6 +169,9 @@ fun CloverOrderScreen(viewModel: OrderViewModel, onBack: () -> Unit) {
         val updated = closedTables + (tableTitle.trim() to now)
         closedTables = updated
         saveClosedTables(context, updated)
+        // Clean up any local orderId→title mapping for orders of this table
+        openOrders.filter { it.title.trim() == tableTitle.trim() }
+                  .forEach { removeOrderTableMapping(context, it.id) }
         openOrders    = openOrders.filter { it.title.trim() != tableTitle.trim() }
         selectedOrder = null
     }
@@ -163,7 +195,13 @@ fun CloverOrderScreen(viewModel: OrderViewModel, onBack: () -> Unit) {
         scope.launch {
             CloverRepository.fetchOpenOrdersViaProxy(CloverConfig.PROXY_SECRET)
                 .onSuccess { orders ->
-                    openOrders = applyFilter(orders)
+                    // Enrich orders whose title is blank using local orderId→tableTitle mapping
+                    // (REST-created orders may not have title set in Clover's response)
+                    val localMapping = loadOrderTableMapping(context)
+                    val enriched = if (localMapping.isEmpty()) orders else orders.map { o ->
+                        if (o.title.isBlank()) o.copy(title = localMapping[o.id] ?: "") else o
+                    }
+                    openOrders = applyFilter(enriched)
                     errorMsg   = ""
                 }
                 .onFailure { err ->
@@ -319,7 +357,8 @@ fun CloverOrderScreen(viewModel: OrderViewModel, onBack: () -> Unit) {
                     tableTitle      = selectedSlotTitle!!,
                     existingOrderId = null,
                     viewModel       = viewModel,
-                    onDismiss       = { showAddItemsEmpty = false; selectedSlotTitle = null }
+                    onDismiss       = { showAddItemsEmpty = false; selectedSlotTitle = null },
+                    onOrderCreated  = { reload() }
                 )
             }
 
@@ -1101,7 +1140,8 @@ private fun AddItemsToKitchenDialog(
     tableTitle: String,         // display name / Clover title of the table
     existingOrderId: String?,   // null = create a new Clover order first
     viewModel: OrderViewModel,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onOrderCreated: (() -> Unit)? = null  // called after new order created → triggers reload
 ) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
@@ -1269,13 +1309,17 @@ private fun AddItemsToKitchenDialog(
                                     val orderId: String = if (existingOrderId != null) {
                                         existingOrderId
                                     } else {
-                                        CloverRepository.createOrderViaProxy(
+                                        val newId = CloverRepository.createOrderViaProxy(
                                             CloverConfig.PROXY_SECRET, tableTitle
                                         ).getOrElse { e ->
                                             printStatus = "❌ Không tạo được order Clover: ${e.message?.take(60)}"
                                             isPrinting = false
                                             return@launch
                                         }
+                                        // Save local mapping: orderId → tableTitle
+                                        // (Clover may return blank title for REST-created orders)
+                                        saveOrderTableMapping(context, newId, tableTitle)
+                                        newId
                                     }
 
                                     // ── Group by zone ────────────────────────────
@@ -1347,7 +1391,11 @@ private fun AddItemsToKitchenDialog(
                                         if (existingOrderId == null) appendLine("ℹ️ Bàn sẽ hiện xanh trong app sau vài giây")
                                     }.trim()
 
-                                    if (printedZones > 0) kitchenCart.clear()
+                                    if (printedZones > 0) {
+                                        kitchenCart.clear()
+                                        // Trigger floor plan reload so table turns blue
+                                        if (existingOrderId == null) onOrderCreated?.invoke()
+                                    }
                                 } catch (e: Exception) {
                                     printStatus = "❌ Lỗi: ${e.message?.take(60)}"
                                 } finally {
