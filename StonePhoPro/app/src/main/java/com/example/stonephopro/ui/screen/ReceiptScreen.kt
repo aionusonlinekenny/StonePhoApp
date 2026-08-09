@@ -11,7 +11,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -155,36 +154,7 @@ fun ReceiptScreen(viewModel: OrderViewModel) {
         Text(" Subtotal: %.2f$".format(subtotal), fontSize = 12.sp)
         Text(" Discount (${discountPercent.toInt()}%%): -%.2f$".format(dis), fontSize = 12.sp)
         Text(" TAX 8%%: %.2f$".format(tax), fontSize = 12.sp)
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Total — large gradient display
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    brush = Brush.horizontalGradient(
-                        colors = listOf(Color(0xFF1565C0), Color(0xFF6A1B9A))
-                    ),
-                    shape = RoundedCornerShape(10.dp)
-                )
-                .padding(horizontal = 16.dp, vertical = 10.dp)
-        ) {
-            Column(horizontalAlignment = Alignment.End, modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "Total",
-                    color = Color.White.copy(alpha = 0.8f),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium
-                )
-                Text(
-                    text = "$%.2f".format(total),
-                    color = Color.White,
-                    fontSize = 40.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    textAlign = TextAlign.End
-                )
-            }
-        }
+        Text(" Total: %.2f$".format(total), fontSize = 14.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(8.dp))
 
         // Save & Print Receipt
