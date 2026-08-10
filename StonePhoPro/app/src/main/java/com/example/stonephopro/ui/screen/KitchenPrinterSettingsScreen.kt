@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.stonephopro.components.Button3D
+import com.example.stonephopro.utils.SocketPrinter
 import com.example.stonephopro.utils.print.KitchenPrinterConfig
 import com.example.stonephopro.utils.print.scanLANForPrinters
 import kotlinx.coroutines.Dispatchers
@@ -213,37 +214,85 @@ fun KitchenPrinterSettingsScreen(
 
 @Composable
 private fun KitchenIpRow(context: Context, zone: KitchenPrinterConfig.Zone, refreshKey: Int = 0) {
+    val scope = rememberCoroutineScope()
     // remember(refreshKey) → re-reads SharedPreferences whenever a scan assigns a printer
-    var text  by remember(refreshKey) { mutableStateOf(KitchenPrinterConfig.getIpPort(context, zone)) }
-    var saved by remember(refreshKey) { mutableStateOf(false) }
+    var text      by remember(refreshKey) { mutableStateOf(KitchenPrinterConfig.getIpPort(context, zone)) }
+    var saved     by remember(refreshKey) { mutableStateOf(false) }
+    var testMsg   by remember { mutableStateOf("") }
+    var isTesting by remember { mutableStateOf(false) }
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Text(
-            "${zone.emoji} ${zone.label}",
-            modifier = Modifier.width(72.dp),
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium
-        )
-        OutlinedTextField(
-            value = text,
-            onValueChange = { text = it; saved = false },
-            placeholder = { Text("IP:Port  hoặc  TCP:IP:Port", fontSize = 11.sp) },
-            singleLine = true,
-            modifier = Modifier.weight(1f),
-            textStyle = LocalTextStyle.current.copy(fontSize = 13.sp)
-        )
-        Button(
-            onClick = { KitchenPrinterConfig.setIpPort(context, zone, text); saved = true },
-            colors = ButtonDefaults.buttonColors(
-                containerColor = if (saved) Color(0xFF43A047) else Color(0xFF1565C0)
-            ),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(if (saved) "✓" else "Lưu", fontSize = 12.sp)
+            Text(
+                "${zone.emoji} ${zone.label}",
+                modifier = Modifier.width(72.dp),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it; saved = false },
+                placeholder = { Text("IP:Port  hoặc  TCP:IP:Port", fontSize = 11.sp) },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+                textStyle = LocalTextStyle.current.copy(fontSize = 13.sp)
+            )
+            Button(
+                onClick = { KitchenPrinterConfig.setIpPort(context, zone, text); saved = true },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (saved) Color(0xFF43A047) else Color(0xFF1565C0)
+                ),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(if (saved) "✓" else "Lưu", fontSize = 12.sp)
+            }
+        }
+        // Test print button — sends a simple test ticket to verify IP is the right printer
+        if (text.isNotBlank()) {
+            val parsed = KitchenPrinterConfig.parseIpPort(text)
+            if (parsed != null) {
+                val (ip, port) = parsed
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 80.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            if (!isTesting) {
+                                isTesting = true
+                                testMsg = "🔄 Đang kết nối $ip:$port…"
+                                scope.launch {
+                                    testMsg = try {
+                                        val ticket = "\n*** TEST PRINT ***\n" +
+                                            "Zone : ${zone.label}\n" +
+                                            "IP   : $ip:$port\n" +
+                                            "***  OK  ***\n\n\n"
+                                        SocketPrinter.printText(ip, port, ticket)
+                                        "✅ Kết nối OK — kiểm tra máy in đã in TEST chưa"
+                                    } catch (e: Exception) {
+                                        "❌ ${e.javaClass.simpleName}: ${e.message?.take(60)}"
+                                    }
+                                    isTesting = false
+                                }
+                            }
+                        },
+                        enabled = !isTesting,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6A1B9A)),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text(if (isTesting) "…" else "🖨️ Test", fontSize = 12.sp, color = Color.White)
+                    }
+                    if (testMsg.isNotEmpty()) {
+                        Text(testMsg, fontSize = 11.sp, color = Color(0xFF424242))
+                    }
+                }
+            }
         }
     }
 }
