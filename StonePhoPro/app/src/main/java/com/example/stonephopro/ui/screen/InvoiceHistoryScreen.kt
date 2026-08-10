@@ -254,7 +254,7 @@ fun InvoiceHistoryScreen(onBack: () -> Unit, permission: String) {
                         onClick = {
                             val summary = buildInvoiceSummaryText(context, viewMode, invoices, selectedDate)
                             PrinterConfig.getSelectedIpPort()?.let { (ip, port) ->
-                                SocketPrinter.printText(ip, port, summary)
+                                scope.launch { SocketPrinter.printText(ip, port, summary) }
                             }
                         },
                         modifier = Modifier
