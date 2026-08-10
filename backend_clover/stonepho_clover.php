@@ -5,7 +5,7 @@ error_reporting(E_ALL);
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 
-define('SCRIPT_VER', 'v20260727a');
+define('SCRIPT_VER', 'v20260810a');
 define('API_KEY',    'StonePhoClover@2024');
 define('MID',        'GW3XFCV71AK81');
 define('TOKEN',      'c30698f2-347e-add6-b758-44285d0e6cac');
@@ -234,13 +234,21 @@ switch ($action) {
             'ver'    => SCRIPT_VER
         )));
 
+    case 'order_types':
+        die(clover('/order_types?limit=100'));
+
     case 'create_order':
-        $title = isset($_GET['title']) ? trim(urldecode($_GET['title'])) : '';
+        $title       = isset($_GET['title'])         ? trim(urldecode($_GET['title'])) : '';
+        $orderTypeId = isset($_GET['order_type_id']) ? trim($_GET['order_type_id'])   : '';
         if ($title === '') {
             http_response_code(400);
             die(json_encode(array('error' => 'Missing title', 'ver' => SCRIPT_VER)));
         }
-        $coBody = json_encode(array('title' => $title));
+        $coData = array('title' => $title);
+        if ($orderTypeId !== '') {
+            $coData['orderType'] = array('id' => $orderTypeId);
+        }
+        $coBody = json_encode($coData);
         $ch = curl_init(BASE . '/orders');
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_POST, true);

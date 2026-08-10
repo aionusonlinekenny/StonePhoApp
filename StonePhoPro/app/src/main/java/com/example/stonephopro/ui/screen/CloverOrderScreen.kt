@@ -137,11 +137,13 @@ fun CloverOrderScreen(viewModel: OrderViewModel, onBack: () -> Unit) {
     var isRefreshing      by remember { mutableStateOf(false) }
     var errorMsg          by remember { mutableStateOf("") }
     var selectedOrder     by remember { mutableStateOf<CloverOrder?>(null) }
-    var selectedTab       by remember { mutableStateOf(0) }
-    var closedTables      by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
-    var todayCashTotal    by remember { mutableStateOf(0.0) }
-    var selectedSlotTitle by remember { mutableStateOf<String?>(null) }
-    var showAddItemsEmpty by remember { mutableStateOf(false) }
+    var selectedTab        by remember { mutableStateOf(0) }
+    var closedTables       by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
+    var todayCashTotal     by remember { mutableStateOf(0.0) }
+    var selectedSlotTitle  by remember { mutableStateOf<String?>(null) }
+    var showAddItemsEmpty  by remember { mutableStateOf(false) }
+    // Dine In orderType ID — extracted from loaded orders so new orders appear on Clover Dining POS
+    var dineInOrderTypeId  by remember { mutableStateOf<String?>(null) }
 
     // Load locally closed tables from SharedPreferences on start
     LaunchedEffect(Unit) {
@@ -203,6 +205,15 @@ fun CloverOrderScreen(viewModel: OrderViewModel, onBack: () -> Unit) {
                     }
                     openOrders = applyFilter(enriched)
                     errorMsg   = ""
+                    // Extract Dine In orderType ID from any loaded order that has one
+                    if (dineInOrderTypeId == null) {
+                        dineInOrderTypeId = enriched.firstNotNullOfOrNull { o ->
+                            val label = o.orderType?.label?.lowercase() ?: ""
+                            if (label.contains("dine") || label.contains("table") || label.contains("dining"))
+                                o.orderType?.id
+                            else null
+                        }
+                    }
                 }
                 .onFailure { err ->
                     if (isFirstLoad) errorMsg = "Lỗi backend: ${err.message}"
@@ -356,6 +367,7 @@ fun CloverOrderScreen(viewModel: OrderViewModel, onBack: () -> Unit) {
                 AddItemsToKitchenDialog(
                     tableTitle      = selectedSlotTitle!!,
                     existingOrderId = null,
+                    dineInOrderTypeId = dineInOrderTypeId,
                     viewModel       = viewModel,
                     onDismiss       = { showAddItemsEmpty = false; selectedSlotTitle = null },
                     onOrderCreated  = { reload() }
@@ -1137,8 +1149,9 @@ private fun SplitBillDialog(
 
 @Composable
 private fun AddItemsToKitchenDialog(
-    tableTitle: String,         // display name / Clover title of the table
-    existingOrderId: String?,   // null = create a new Clover order first
+    tableTitle: String,           // display name / Clover title of the table
+    existingOrderId: String?,     // null = create a new Clover order first
+    dineInOrderTypeId: String? = null,  // Dine In orderType ID so new orders show on Clover POS
     viewModel: OrderViewModel,
     onDismiss: () -> Unit,
     onOrderCreated: (() -> Unit)? = null  // called after new order created → triggers reload
@@ -1312,10 +1325,11 @@ private fun AddItemsToKitchenDialog(
                                         steps.add("📋 Order hiện có: …${existingOrderId.takeLast(8)}")
                                         existingOrderId
                                     } else {
-                                        steps.add("🔄 Tạo order Clover cho bàn $tableTitle…")
+                                        val typeInfo = if (dineInOrderTypeId != null) " (Dine In)" else " (no orderType)"
+                                        steps.add("🔄 Tạo order Clover cho bàn $tableTitle$typeInfo…")
                                         printStatus = steps.joinToString("\n")
                                         val newId = CloverRepository.createOrderViaProxy(
-                                            CloverConfig.PROXY_SECRET, tableTitle
+                                            CloverConfig.PROXY_SECRET, tableTitle, dineInOrderTypeId
                                         ).getOrElse { e ->
                                             steps.add("❌ Tạo order thất bại: ${e.message?.take(80)}")
                                             printStatus = steps.joinToString("\n")

@@ -114,13 +114,32 @@ object CloverRepository {
         }
     }
 
+    suspend fun fetchOrderTypesViaProxy(
+        proxyToken: String
+    ): Result<List<CloverOrderTypeRef>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = "${CloverConfig.PROXY_URL}?action=order_types"
+            val json = get(url, proxyToken)
+            val arr = com.google.gson.JsonParser.parseString(json).asJsonObject
+                .getAsJsonArray("elements") ?: return@runCatching emptyList()
+            arr.mapNotNull { el ->
+                val obj = el.asJsonObject
+                val id    = obj.get("id")?.asString    ?: return@mapNotNull null
+                val label = obj.get("label")?.asString ?: ""
+                CloverOrderTypeRef(id, label)
+            }
+        }
+    }
+
     suspend fun createOrderViaProxy(
         proxyToken: String,
-        tableTitle: String
+        tableTitle: String,
+        orderTypeId: String? = null
     ): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
             val encodedTitle = java.net.URLEncoder.encode(tableTitle, "UTF-8")
-            val url = "${CloverConfig.PROXY_URL}?action=create_order&title=$encodedTitle"
+            var url = "${CloverConfig.PROXY_URL}?action=create_order&title=$encodedTitle"
+            if (!orderTypeId.isNullOrBlank()) url += "&order_type_id=${java.net.URLEncoder.encode(orderTypeId, "UTF-8")}"
             val (code, body) = httpGet(url, proxyToken)
             if (code !in 200..299) error("create_order HTTP $code")
             val json = com.google.gson.JsonParser.parseString(body).asJsonObject
