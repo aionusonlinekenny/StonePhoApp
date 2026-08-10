@@ -145,9 +145,16 @@ fun CloverOrderScreen(viewModel: OrderViewModel, onBack: () -> Unit) {
     // Dine In orderType ID — extracted from loaded orders so new orders appear on Clover Dining POS
     var dineInOrderTypeId  by remember { mutableStateOf<String?>(null) }
 
-    // Load locally closed tables from SharedPreferences on start
+    // Load locally closed tables + pre-fetch Dine In orderType ID on start
     LaunchedEffect(Unit) {
         closedTables = loadClosedTables(context)
+        // Pre-fetch so dineInOrderTypeId is ready even when no tables are open yet
+        CloverRepository.fetchOrderTypesViaProxy(CloverConfig.PROXY_SECRET).onSuccess { types ->
+            dineInOrderTypeId = types.firstOrNull { t ->
+                val l = t.label.lowercase()
+                l.contains("dine") || l.contains("table") || l.contains("dining")
+            }?.id
+        }
     }
 
     val tableOrderMap by remember(openOrders) {
