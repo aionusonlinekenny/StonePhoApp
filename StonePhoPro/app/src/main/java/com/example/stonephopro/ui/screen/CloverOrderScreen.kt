@@ -188,14 +188,28 @@ fun CloverOrderScreen(viewModel: OrderViewModel, onBack: () -> Unit) {
     fun applyFilter(orders: List<CloverOrder>): List<CloverOrder> {
         // PHP pre-filters: paid orders, closed/deleted state, older than 8h.
         // Android only handles local cash closings (SharedPreferences).
-        return orders
+        val afterCashClose = orders.filter { o ->
+            val closeTime = closedTables[o.title.trim()]
+            closeTime == null || o.createdTime > closeTime
+        }
+        // Dining tables (non-empty title, Dine In type): keep only newest per title
+        // to avoid duplicate slots on the floor plan after re-open.
+        // To Go orders: keep ALL — multiple concurrent To Go orders are normal.
+        val diningOrders = afterCashClose
             .filter { o ->
-                val closeTime = closedTables[o.title.trim()]
-                closeTime == null || o.createdTime > closeTime
+                val title = o.title.trim()
+                val type  = o.orderType?.label?.lowercase() ?: ""
+                title.isNotBlank() && !type.contains("go") && !type.contains("takeout") && !type.contains("pickup")
             }
             .groupBy { it.title.trim() }
             .mapValues { (_, list) -> list.maxByOrNull { it.createdTime }!! }
             .values.toList()
+        val toGoOrders = afterCashClose.filter { o ->
+            val title = o.title.trim()
+            val type  = o.orderType?.label?.lowercase() ?: ""
+            title.isEmpty() || type.contains("go") || type.contains("takeout") || type.contains("pickup")
+        }
+        return diningOrders + toGoOrders
     }
 
     // Background refresh — updates data silently, no loading flash
