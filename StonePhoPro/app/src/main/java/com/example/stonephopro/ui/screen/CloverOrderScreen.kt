@@ -126,6 +126,17 @@ private fun loadOrderTableMapping(ctx: Context): Map<String, String> {
     } catch (e: Exception) { emptyMap() }
 }
 
+// ── Split-bill partial payment persistence ────────────────────────────────────
+// Persists total cash already paid for an order so SplitBillDialog can resume
+// correctly if the user dismisses and reopens the dialog.
+private const val PREFS_SPLIT = "split_paid"
+private fun saveSplitPaid(ctx: Context, orderId: String, paidCents: Long) =
+    ctx.getSharedPreferences(PREFS_SPLIT, Context.MODE_PRIVATE).edit().putLong(orderId, paidCents).apply()
+private fun loadSplitPaid(ctx: Context, orderId: String): Long =
+    ctx.getSharedPreferences(PREFS_SPLIT, Context.MODE_PRIVATE).getLong(orderId, 0L)
+private fun clearSplitPaid(ctx: Context, orderId: String) =
+    ctx.getSharedPreferences(PREFS_SPLIT, Context.MODE_PRIVATE).edit().remove(orderId).apply()
+
 // ── Main screen ───────────────────────────────────────────────────────────────
 @Composable
 fun CloverOrderScreen(viewModel: OrderViewModel, onBack: () -> Unit) {
@@ -986,8 +997,9 @@ private fun SplitBillDialog(
     var remainingItems by remember { mutableStateOf(allItems) }
     var selectedIds    by remember { mutableStateOf<Set<String>>(emptySet()) }
 
-    // --- By-amount state ---
-    var remainingCents  by remember { mutableStateOf(order.total) }
+    // --- By-amount state — load persisted paid amount so dialog can be resumed ---
+    val persistedPaid   = remember { loadSplitPaid(context, order.id) }
+    var remainingCents  by remember { mutableStateOf(order.total - persistedPaid) }
     var splitAmountText by remember { mutableStateOf("") }
 
     var splitCount          by remember { mutableStateOf(1) }
@@ -1003,7 +1015,9 @@ private fun SplitBillDialog(
     val allDoneAmount = remainingCents <= 0L
     val allDone       = if (splitMode == 0) allDoneItem else allDoneAmount
 
-    Dialog(onDismissRequest = onDismiss) {
+    // onDismissRequest = {} prevents accidental dismiss by tap-outside
+    // (partial payment state would be lost; use ✕ Hủy button instead)
+    Dialog(onDismissRequest = {}) {
         Surface(
             shape    = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth().fillMaxHeight(0.88f)
@@ -1293,6 +1307,7 @@ private fun SplitBillDialog(
                                         tableTitle = order.title
                                     ))
                                     CloverRepository.deleteOrderViaProxy(CloverConfig.PROXY_SECRET, order.id)
+                                    clearSplitPaid(context, order.id)  // remove persisted split state
                                     isSaving = false
                                     onCloseTable()
                                 }
@@ -1351,7 +1366,10 @@ private fun SplitBillDialog(
             remainingCents  -= confirmedSplitCents
             splitAmountText  = ""
             splitCount++
-            printStatus = "✅ Phần ${splitCount - 1}: ${formatCents(confirmedSplitCents)} cash"
+            // Persist total paid so far — dialog can be closed and reopened safely
+            val totalPaidSoFar = order.total - remainingCents
+            saveSplitPaid(context, order.id, totalPaidSoFar)
+            printStatus = "✅ Phần ${splitCount - 1}: ${formatCents(confirmedSplitCents)} cash · Còn lại: ${formatCents(remainingCents)}"
         }
 
         AlertDialog(
