@@ -1239,7 +1239,8 @@ private fun SplitBillDialog(
                     // "Transfer to POS" — shown in by-amount mode when at least one partial
                     // cash payment has been recorded. The Clover discount already reduces the
                     // POS total; staff swipes the card on the Clover terminal for the rest.
-                    if (splitMode == 1 && persistedPaid > 0L && !allDoneAmount) {
+                    // Use splitCount > 1 (paid this session) OR persistedPaid > 0 (paid before)
+                    if (splitMode == 1 && (splitCount > 1 || persistedPaid > 0L) && !allDoneAmount) {
                         Button3D(
                             text    = "📲 Chuyển POS",
                             onClick = {
