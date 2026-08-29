@@ -1392,7 +1392,12 @@ private fun SplitBillDialog(
             // Persist total paid so far — dialog can be closed and reopened safely
             val totalPaidSoFar = order.total - remainingCents
             saveSplitPaid(context, order.id, totalPaidSoFar)
-            printStatus = "✅ Phần ${splitCount - 1}: ${formatCents(confirmedSplitCents)} cash · Còn lại: ${formatCents(remainingCents)}"
+            // Show both local result AND Clover API status persistently in printStatus
+            val cloverNote = if (creditResult.isSuccess)
+                "POS discount OK ✅"
+            else
+                "POS discount ❌: ${creditResult.exceptionOrNull()?.message?.take(50)}"
+            printStatus = "Phần ${splitCount - 1}: ${formatCents(confirmedSplitCents)} cash · Còn lại: ${formatCents(remainingCents)}\n$cloverNote"
         }
 
         AlertDialog(
