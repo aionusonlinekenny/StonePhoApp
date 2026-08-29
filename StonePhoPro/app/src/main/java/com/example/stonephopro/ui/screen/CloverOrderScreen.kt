@@ -1236,6 +1236,22 @@ private fun SplitBillDialog(
                         gradientColors = listOf(Color(0xFF78909C), Color(0xFF546E7A))
                     )
 
+                    // "Transfer to POS" — shown in by-amount mode when at least one partial
+                    // cash payment has been recorded. The Clover discount already reduces the
+                    // POS total; staff swipes the card on the Clover terminal for the rest.
+                    if (splitMode == 1 && persistedPaid > 0L && !allDoneAmount) {
+                        Button3D(
+                            text    = "📲 Chuyển POS",
+                            onClick = {
+                                clearSplitPaid(context, order.id)
+                                onDismiss()
+                            },
+                            modifier       = Modifier.weight(2f).height(46.dp),
+                            fontSize       = 12.sp,
+                            gradientColors = listOf(Color(0xFFFF8F00), Color(0xFFE65100))
+                        )
+                    }
+
                     if (!allDone) {
                         if (splitMode == 0) {
                             // BY ITEM — print immediately
