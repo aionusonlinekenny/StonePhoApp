@@ -1028,6 +1028,12 @@ private fun SplitBillDialog(
                     "✂️ Chia bill — Bàn ${order.title.ifEmpty { "#${order.id.takeLast(4)}" }}",
                     fontWeight = FontWeight.Bold, fontSize = 17.sp
                 )
+                if (persistedPaid > 0L && !allDoneAmount) {
+                    Text(
+                        "⚠️ Đã thanh toán ${formatCents(persistedPaid)} — Còn lại ${formatCents(remainingCents)}",
+                        fontSize = 12.sp, color = Color(0xFF7B1FA2)
+                    )
+                }
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // Mode tabs
