@@ -1008,6 +1008,8 @@ private fun SplitBillDialog(
     // By-amount: pending confirmation before print/skip
     var showAmtConfirm      by remember { mutableStateOf(false) }
     var confirmedSplitCents by remember { mutableStateOf(0L) }
+    // Handoff to POS: show dialog telling staff exact card amount to charge
+    var showPosHandoff      by remember { mutableStateOf(false) }
 
     val selectedItems = remainingItems.filter { it.id in selectedIds }
     val selectedTotal = selectedItems.sumOf { it.lineTotal }
@@ -1243,10 +1245,7 @@ private fun SplitBillDialog(
                     if (splitMode == 1 && (splitCount > 1 || persistedPaid > 0L) && !allDoneAmount) {
                         Button3D(
                             text    = "📲 Chuyển POS",
-                            onClick = {
-                                clearSplitPaid(context, order.id)
-                                onDismiss()
-                            },
+                            onClick = { showPosHandoff = true },
                             modifier       = Modifier.weight(2f).height(46.dp),
                             fontSize       = 12.sp,
                             gradientColors = listOf(Color(0xFFFF8F00), Color(0xFFE65100))
@@ -1356,16 +1355,9 @@ private fun SplitBillDialog(
             val dateStr = SimpleDateFormat("MM-dd-yyyy", Locale.US).format(now.time)
             val timeStr = SimpleDateFormat("HH:mm",      Locale.US).format(now.time)
 
-            // Apply order discount so Clover POS total reduces by the cash amount paid
-            val creditResult = CloverRepository.addDiscountViaProxy(
-                CloverConfig.PROXY_SECRET,
-                order.id,
-                "Cash Paid - Part $splitCount",
-                confirmedSplitCents   // positive amount — Clover treats as discount
-            )
-            amtStatus = if (creditResult.isSuccess) "✅ Đã cập nhật Clover POS"
-                        else "⚠️ Clover: ${creditResult.exceptionOrNull()?.message?.take(40)}"
-
+            // Clover REST API cannot add discounts to Dining orders (returns 502).
+            // We track remaining balance locally only; staff is shown the card amount
+            // via the "Chuyển POS" handoff dialog.
             if (doPrint) {
                 val ticket = buildString {
                     appendLine("  STONE PHO")
@@ -1382,22 +1374,16 @@ private fun SplitBillDialog(
                 }
                 amtStatus += try {
                     SocketPrinter.printText(ip, port, ticket)
-                    "\n✅ Đã in receipt"
-                } catch (e: Exception) { "\n❌ Printer: ${e.message?.take(40)}" }
+                    "✅ Đã in receipt"
+                } catch (e: Exception) { "❌ Printer: ${e.message?.take(40)}" }
             }
 
             remainingCents  -= confirmedSplitCents
             splitAmountText  = ""
             splitCount++
-            // Persist total paid so far — dialog can be closed and reopened safely
             val totalPaidSoFar = order.total - remainingCents
             saveSplitPaid(context, order.id, totalPaidSoFar)
-            // Show both local result AND Clover API status persistently in printStatus
-            val cloverNote = if (creditResult.isSuccess)
-                "POS discount OK ✅"
-            else
-                "POS discount ❌: ${creditResult.exceptionOrNull()?.message?.take(50)}"
-            printStatus = "Phần ${splitCount - 1}: ${formatCents(confirmedSplitCents)} cash · Còn lại: ${formatCents(remainingCents)}\n$cloverNote"
+            printStatus = "✅ Phần ${splitCount - 1}: ${formatCents(confirmedSplitCents)} cash · Còn lại: ${formatCents(remainingCents)}"
         }
 
         AlertDialog(
@@ -1463,6 +1449,47 @@ private fun SplitBillDialog(
                 }
             },
             dismissButton = {}
+        )
+    }
+
+    // ── POS handoff dialog — tells staff exactly how much to charge by card ────
+    if (showPosHandoff) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("📲 Chuyển sang Clover POS", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Cash đã thu:", fontSize = 13.sp, color = Color.Gray)
+                    Text(
+                        formatCents(order.total - remainingCents),
+                        fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32)
+                    )
+                    HorizontalDivider()
+                    Text("Charge thẻ trên Clover POS:", fontSize = 13.sp, color = Color.Gray)
+                    Text(
+                        formatCents(remainingCents),
+                        fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF1565C0)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "⚠️ Clover POS vẫn hiện tổng cũ — nhập tay ${formatCents(remainingCents)} khi thanh toán thẻ.",
+                        fontSize = 12.sp, color = Color(0xFFE65100)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showPosHandoff = false
+                        clearSplitPaid(context, order.id)
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
+                ) { Text("✔ Đã hiểu — Chuyển POS") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPosHandoff = false }) { Text("Quay lại") }
+            }
         )
     }
 }
