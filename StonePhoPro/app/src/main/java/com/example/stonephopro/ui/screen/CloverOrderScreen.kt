@@ -623,6 +623,7 @@ private fun OrderDetailPanel(
     var showSplitBill      by remember { mutableStateOf(false) }
     var showAddItems       by remember { mutableStateOf(false) }
     var receivedAmountText by remember { mutableStateOf("") }
+    var pendingReceiptText by remember { mutableStateOf("") }   // built on confirm, printed on demand
 
     val timeStr = remember(order.createdTime) {
         if (order.createdTime > 0)
@@ -873,27 +874,21 @@ private fun OrderDetailPanel(
                                 date         = dateStr,
                                 time         = timeNow
                             )
-                            val (ip, port) = PrinterConfig.getSelectedIpPort() ?: ("192.168.0.114" to 9100)
-                            val printMsg = try {
-                                SocketPrinter.printText(ip, port, receiptText)
-                                "✅ In thành công · Hóa đơn $invoiceId"
-                            } catch (e: Exception) {
-                                "⚠️ Đã lưu hóa đơn $invoiceId\n❌ Lỗi máy in: ${e.message}"
-                            }
+                            pendingReceiptText = receiptText
                             val deleteMsg = CloverRepository.deleteOrderViaProxy(
                                 CloverConfig.PROXY_SECRET, order.id
                             ).fold(
                                 onSuccess = { "✅ Đã release bàn ${order.title} trên Clover POS" },
                                 onFailure = { "⚠️ Không thể xoá order Clover: ${it.message}" }
                             )
-                            payResult = "$printMsg\n$deleteMsg"
+                            payResult = "✅ Hóa đơn $invoiceId đã lưu\n$deleteMsg"
                             showPayDialog = true
                         }
                     },
                     enabled = canConfirm,
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
                 ) {
-                    Text("🖨️ Xác nhận & In bill", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("✅ Xác nhận thanh toán", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
@@ -911,20 +906,53 @@ private fun OrderDetailPanel(
         )
     }
 
-    // Cash payment result dialog
+    // Cash payment result dialog — offer optional receipt printing
     if (showPayDialog) {
+        var isPrinting by remember { mutableStateOf(false) }
+        var printResult by remember { mutableStateOf("") }
         AlertDialog(
-            onDismissRequest = { showPayDialog = false },
-            confirmButton = {
-                TextButton(onClick = { showPayDialog = false; onCloseTable() }) {
-                    Text("OK · Đóng bàn")
+            onDismissRequest = {},
+            title = { Text("✅ Thanh toán Cash", fontWeight = FontWeight.Bold) },
+            text  = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(payResult, fontSize = 13.sp)
+                    if (printResult.isNotEmpty()) {
+                        Text(printResult, fontSize = 12.sp,
+                            color = if (printResult.startsWith("✅")) Color(0xFF2E7D32) else Color(0xFFC62828))
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("In receipt cho khách?", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { showPayDialog = false }) { Text("Ở lại") }
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { showPayDialog = false; onCloseTable() }) {
+                        Text("Không in", color = Color.Gray)
+                    }
+                    Button(
+                        onClick = {
+                            if (!isPrinting) {
+                                isPrinting = true
+                                val txt = pendingReceiptText
+                                scope.launch {
+                                    val (ip, port) = PrinterConfig.getSelectedIpPort() ?: ("192.168.0.114" to 9100)
+                                    printResult = try {
+                                        SocketPrinter.printText(ip, port, txt)
+                                        "✅ Đã in"
+                                    } catch (e: Exception) { "❌ ${e.message?.take(50)}" }
+                                    isPrinting = false
+                                    if (printResult.startsWith("✅")) { showPayDialog = false; onCloseTable() }
+                                }
+                            }
+                        },
+                        enabled = !isPrinting,
+                        colors  = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
+                    ) {
+                        Text(if (isPrinting) "⏳ Đang in…" else "🖨️ In receipt")
+                    }
+                }
             },
-            title = { Text("Thanh toán Cash") },
-            text  = { Text(payResult) }
+            dismissButton = {}
         )
     }
 
@@ -951,15 +979,26 @@ private fun SplitBillDialog(
     val scope    = rememberCoroutineScope()
     val allItems = order.lineItems?.elements ?: emptyList()
 
+    // Mode: 0 = by item, 1 = by amount
+    var splitMode by remember { mutableStateOf(0) }
+
+    // --- By-item state ---
     var remainingItems by remember { mutableStateOf(allItems) }
     var selectedIds    by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var splitCount     by remember { mutableStateOf(1) }
-    var printStatus    by remember { mutableStateOf("") }
-    var isSaving       by remember { mutableStateOf(false) }
+
+    // --- By-amount state ---
+    var remainingCents  by remember { mutableStateOf(order.total) }
+    var splitAmountText by remember { mutableStateOf("") }
+
+    var splitCount  by remember { mutableStateOf(1) }
+    var printStatus by remember { mutableStateOf("") }
+    var isSaving    by remember { mutableStateOf(false) }
 
     val selectedItems = remainingItems.filter { it.id in selectedIds }
     val selectedTotal = selectedItems.sumOf { it.lineTotal }
-    val allDone       = remainingItems.isEmpty()
+    val allDoneItem   = remainingItems.isEmpty()
+    val allDoneAmount = remainingCents <= 0L
+    val allDone       = if (splitMode == 0) allDoneItem else allDoneAmount
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -974,6 +1013,33 @@ private fun SplitBillDialog(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
 
+                // Mode tabs
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFFF3E5F5), RoundedCornerShape(8.dp))
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    listOf("📋 Theo món", "💵 Theo số tiền").forEachIndexed { idx, label ->
+                        val active = splitMode == idx
+                        Button(
+                            onClick = {
+                                splitMode = idx
+                                printStatus = ""
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (active) Color(0xFF7B1FA2) else Color.Transparent,
+                                contentColor   = if (active) Color.White else Color(0xFF7B1FA2)
+                            ),
+                            elevation = ButtonDefaults.buttonElevation(0.dp),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 6.dp)
+                        ) { Text(label, fontSize = 13.sp, fontWeight = if (active) FontWeight.Bold else FontWeight.Normal) }
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+
                 if (allDone) {
                     // ── Tất cả đã tính ────────────────────────────────────
                     Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -984,8 +1050,8 @@ private fun SplitBillDialog(
                             Text("${splitCount - 1} phần đã in", fontSize = 13.sp, color = Color.Gray)
                         }
                     }
-                } else {
-                    // ── Header phần hiện tại ──────────────────────────────
+                } else if (splitMode == 0) {
+                    // ── BY ITEM mode ──────────────────────────────────────
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -998,8 +1064,6 @@ private fun SplitBillDialog(
                         Text("Còn ${remainingItems.size} món chưa tính", fontSize = 12.sp, color = Color.Gray)
                     }
                     Spacer(modifier = Modifier.height(4.dp))
-
-                    // Select all / deselect
                     Row {
                         TextButton(onClick = { selectedIds = remainingItems.map { it.id }.toSet() }) {
                             Text("Chọn tất cả", fontSize = 13.sp, color = Color(0xFF7B1FA2))
@@ -1008,15 +1072,12 @@ private fun SplitBillDialog(
                             Text("Bỏ chọn", fontSize = 13.sp, color = Color.Gray)
                         }
                     }
-
                     Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
                         Text("",       modifier = Modifier.width(28.dp))
                         Text("Món",    modifier = Modifier.weight(1f),   fontSize = 11.sp, color = Color.Gray)
                         Text("T.Tiền", modifier = Modifier.width(72.dp), fontSize = 11.sp, color = Color.Gray, textAlign = TextAlign.End)
                     }
                     Divider()
-
-                    // Danh sách món còn lại
                     LazyColumn(modifier = Modifier.weight(1f)) {
                         items(remainingItems, key = { it.id }) { li ->
                             val isSelected = li.id in selectedIds
@@ -1024,43 +1085,30 @@ private fun SplitBillDialog(
                                 ?: li.name.takeIf { it.isNotBlank() } ?: "(Không tên)"
                             val qty = if (li.quantity % 1.0 == 0.0) "x${li.quantity.toInt()}"
                                       else "x%.1f".format(li.quantity)
-
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .background(if (isSelected) Color(0xFFF3E5F5) else Color.Transparent)
-                                    .clickable {
-                                        selectedIds = if (isSelected) selectedIds - li.id else selectedIds + li.id
-                                    }
+                                    .clickable { selectedIds = if (isSelected) selectedIds - li.id else selectedIds + li.id }
                                     .padding(vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    if (isSelected) "✓" else "○",
-                                    modifier  = Modifier.width(28.dp),
-                                    color     = if (isSelected) Color(0xFF7B1FA2) else Color.LightGray,
-                                    fontWeight = FontWeight.Bold, fontSize = 16.sp
-                                )
+                                Text(if (isSelected) "✓" else "○", modifier = Modifier.width(28.dp),
+                                    color = if (isSelected) Color(0xFF7B1FA2) else Color.LightGray,
+                                    fontWeight = FontWeight.Bold, fontSize = 16.sp)
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(name, fontSize = 13.sp, fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal)
-                                    Text(qty,  fontSize = 11.sp, color = Color.Gray)
+                                    Text(qty, fontSize = 11.sp, color = Color.Gray)
                                 }
-                                Text(
-                                    formatCents(li.lineTotal),
-                                    modifier  = Modifier.width(72.dp),
-                                    fontSize  = 13.sp,
-                                    textAlign = TextAlign.End,
-                                    color     = if (isSelected) Color(0xFF7B1FA2) else Color(0xFF424242)
-                                )
+                                Text(formatCents(li.lineTotal), modifier = Modifier.width(72.dp),
+                                    fontSize = 13.sp, textAlign = TextAlign.End,
+                                    color = if (isSelected) Color(0xFF7B1FA2) else Color(0xFF424242))
                             }
                             Divider(color = Color(0xFFEEEEEE))
                         }
                     }
-
-                    // Tổng đã chọn
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth()
                             .background(Color(0xFF7B1FA2), RoundedCornerShape(8.dp))
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1068,6 +1116,81 @@ private fun SplitBillDialog(
                     ) {
                         Text("${selectedItems.size} món · Phần $splitCount", color = Color.White, fontSize = 13.sp)
                         Text(formatCents(selectedTotal), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                    }
+
+                } else {
+                    // ── BY AMOUNT mode ────────────────────────────────────
+                    val splitDollars = splitAmountText.toDoubleOrNull() ?: 0.0
+                    val splitCents   = (splitDollars * 100).toLong()
+                    val canSplitAmt  = splitCents in 1..remainingCents
+
+                    // Total remaining
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .background(Color(0xFF7B1FA2).copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment     = Alignment.CenterVertically
+                    ) {
+                        Text("Còn lại cần tính", fontSize = 14.sp, color = Color(0xFF7B1FA2))
+                        Text(formatCents(remainingCents), fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2))
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Amount input
+                    OutlinedTextField(
+                        value = splitAmountText,
+                        onValueChange = { v ->
+                            if (v.isEmpty() || v.matches(Regex("^\\d{0,6}(\\.\\d{0,2})?$"))) splitAmountText = v
+                        },
+                        label = { Text("Số tiền người này trả ($)", fontSize = 13.sp) },
+                        placeholder = { Text("0.00") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = LocalTextStyle.current.copy(fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // After this split, what's left?
+                    if (splitCents > 0) {
+                        val afterCents = remainingCents - splitCents
+                        Row(
+                            modifier = Modifier.fillMaxWidth()
+                                .background(
+                                    if (afterCents >= 0) Color(0xFFE8F5E9) else Color(0xFFFFEBEE),
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment     = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                if (afterCents > 0) "Còn lại (trả thẻ POS)" else if (afterCents == 0L) "Trả đủ ✅" else "Vượt quá",
+                                fontSize = 13.sp,
+                                color = if (afterCents >= 0) Color(0xFF2E7D32) else Color(0xFFC62828)
+                            )
+                            Text(
+                                if (afterCents >= 0) formatCents(afterCents) else "-${formatCents(-afterCents)}",
+                                fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                                color = if (afterCents >= 0) Color(0xFF2E7D32) else Color(0xFFC62828)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.weight(1f))
+
+                    // Summary row
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .background(if (canSplitAmt) Color(0xFF7B1FA2) else Color(0xFFBDBDBD), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment     = Alignment.CenterVertically
+                    ) {
+                        Text("Phần $splitCount", color = Color.White, fontSize = 13.sp)
+                        Text(if (canSplitAmt) formatCents(splitCents) else "--", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
                     }
                 }
 
@@ -1091,7 +1214,8 @@ private fun SplitBillDialog(
                     )
 
                     if (!allDone) {
-                        val canPrint = selectedIds.isNotEmpty()
+                        val canPrint = if (splitMode == 0) selectedIds.isNotEmpty()
+                                       else { val sc = (splitAmountText.toDoubleOrNull() ?: 0.0) * 100; sc in 1.0..remainingCents.toDouble() }
                         Button3D(
                             text    = "🖨️ In phần $splitCount & tiếp",
                             onClick = {
@@ -1100,21 +1224,45 @@ private fun SplitBillDialog(
                                         val now     = java.util.Calendar.getInstance()
                                         val dateStr = SimpleDateFormat("MM-dd-yyyy", Locale.US).format(now.time)
                                         val timeStr = SimpleDateFormat("HH:mm",      Locale.US).format(now.time)
-                                        val receipt = buildCloverReceiptText(
-                                            invoiceId  = "SPLIT-$splitCount",
-                                            tableTitle = order.title,
-                                            lineItems  = selectedItems,
-                                            totalCents = selectedTotal,
-                                            date       = dateStr,
-                                            time       = timeStr
-                                        )
                                         val (ip, port) = PrinterConfig.getSelectedIpPort() ?: ("192.168.0.114" to 9100)
-                                        printStatus = try {
-                                            SocketPrinter.printText(ip, port, receipt)
-                                            "✅ Đã in Phần $splitCount"
-                                        } catch (e: Exception) { "❌ Lỗi: ${e.message}" }
-                                        remainingItems = remainingItems.filter { it.id !in selectedIds }
-                                        selectedIds    = emptySet()
+                                        if (splitMode == 0) {
+                                            // By item
+                                            val receipt = buildCloverReceiptText(
+                                                invoiceId  = "SPLIT-$splitCount",
+                                                tableTitle = order.title,
+                                                lineItems  = selectedItems,
+                                                totalCents = selectedTotal,
+                                                date = dateStr, time = timeStr
+                                            )
+                                            printStatus = try {
+                                                SocketPrinter.printText(ip, port, receipt)
+                                                "✅ Đã in Phần $splitCount"
+                                            } catch (e: Exception) { "❌ Lỗi: ${e.message}" }
+                                            remainingItems = remainingItems.filter { it.id !in selectedIds }
+                                            selectedIds    = emptySet()
+                                        } else {
+                                            // By amount
+                                            val splitCents = ((splitAmountText.toDoubleOrNull() ?: 0.0) * 100).toLong()
+                                            val ticket = buildString {
+                                                appendLine("  STONE PHO")
+                                                appendLine("Table: ${order.title.ifEmpty { "#${order.id.takeLast(4)}" }}")
+                                                appendLine("Date : $dateStr  $timeStr")
+                                                appendLine("----------------------------")
+                                                appendLine("SPLIT BILL — Phần $splitCount")
+                                                appendLine("----------------------------")
+                                                appendLine("Amount Due : ${formatCents(splitCents)}")
+                                                val after = remainingCents - splitCents
+                                                if (after > 0) appendLine("Remaining  : ${formatCents(after)}  (card/POS)")
+                                                appendLine("============================")
+                                                appendLine(); appendLine(); appendLine()
+                                            }
+                                            printStatus = try {
+                                                SocketPrinter.printText(ip, port, ticket)
+                                                "✅ Đã in Phần $splitCount · ${formatCents(splitCents)}"
+                                            } catch (e: Exception) { "❌ Lỗi: ${e.message}" }
+                                            remainingCents  -= splitCents
+                                            splitAmountText  = ""
+                                        }
                                         splitCount++
                                     }
                                 }
