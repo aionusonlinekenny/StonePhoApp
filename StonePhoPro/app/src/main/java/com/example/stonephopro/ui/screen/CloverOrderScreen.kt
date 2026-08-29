@@ -1318,13 +1318,12 @@ private fun SplitBillDialog(
             val dateStr = SimpleDateFormat("MM-dd-yyyy", Locale.US).format(now.time)
             val timeStr = SimpleDateFormat("HH:mm",      Locale.US).format(now.time)
 
-            // Record partial cash as a negative credit on Clover order so POS shows updated balance
-            val creditResult = CloverRepository.addLineItemViaProxy(
+            // Apply order discount so Clover POS total reduces by the cash amount paid
+            val creditResult = CloverRepository.addDiscountViaProxy(
                 CloverConfig.PROXY_SECRET,
                 order.id,
                 "Cash Paid - Part $splitCount",
-                -confirmedSplitCents,
-                1000
+                confirmedSplitCents   // positive amount — Clover treats as discount
             )
             amtStatus = if (creditResult.isSuccess) "✅ Đã cập nhật Clover POS"
                         else "⚠️ Clover: ${creditResult.exceptionOrNull()?.message?.take(40)}"

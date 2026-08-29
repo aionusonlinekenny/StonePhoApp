@@ -5,7 +5,7 @@ error_reporting(E_ALL);
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 
-define('SCRIPT_VER', 'v20260810a');
+define('SCRIPT_VER', 'v20260810b');
 define('API_KEY',    'StonePhoClover@2024');
 define('MID',        'GW3XFCV71AK81');
 define('TOKEN',      'c30698f2-347e-add6-b758-44285d0e6cac');
@@ -277,6 +277,37 @@ switch ($action) {
             )));
         }
         die($coRespBody);
+
+    case 'add_discount':
+        // Apply a fixed-amount order discount (properly reduces Clover POS total)
+        $orderId  = isset($_GET['order_id']) ? trim($_GET['order_id']) : '';
+        $name     = isset($_GET['name'])     ? trim(urldecode($_GET['name'])) : 'Cash Paid';
+        $amount   = isset($_GET['amount'])   ? (int)$_GET['amount'] : 0; // positive cents
+        if ($orderId === '' || $amount <= 0) {
+            http_response_code(400);
+            die(json_encode(array('error' => 'Missing order_id or amount', 'ver' => SCRIPT_VER)));
+        }
+        $discBody = json_encode(array('name' => $name, 'amount' => $amount));
+        $ch = curl_init(BASE . '/orders/' . rawurlencode($orderId) . '/discounts');
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $discBody);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+            'Authorization: Bearer ' . TOKEN,
+            'Content-Type: application/json',
+            'Accept: application/json'
+        ));
+        curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+        $discRespBody = curl_exec($ch);
+        $discCode     = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $discErr      = curl_error($ch);
+        curl_close($ch);
+        if ($discErr) { http_response_code(502); die(json_encode(array('error' => 'curl: ' . $discErr, 'ver' => SCRIPT_VER))); }
+        if ($discCode < 200 || $discCode >= 300) {
+            http_response_code(502);
+            die(json_encode(array('error' => 'Clover discount HTTP ' . $discCode, 'detail' => substr($discRespBody, 0, 300), 'ver' => SCRIPT_VER)));
+        }
+        die($discRespBody);
 
     case 'add_line_item':
         $orderId = isset($_GET['order_id']) ? trim($_GET['order_id']) : '';

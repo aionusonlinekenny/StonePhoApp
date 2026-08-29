@@ -147,6 +147,22 @@ object CloverRepository {
         }
     }
 
+    suspend fun addDiscountViaProxy(
+        proxyToken: String,
+        orderId: String,
+        name: String,
+        amountCents: Long          // positive — Clover discount reduces order total
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val encodedName = java.net.URLEncoder.encode(name, "UTF-8")
+            val url = "${CloverConfig.PROXY_URL}?action=add_discount" +
+                "&order_id=${java.net.URLEncoder.encode(orderId, "UTF-8")}" +
+                "&name=$encodedName&amount=$amountCents"
+            val (code, _) = httpGet(url, proxyToken)
+            if (code !in 200..299) error("add_discount HTTP $code")
+        }
+    }
+
     suspend fun addLineItemViaProxy(
         proxyToken: String,
         orderId: String,
