@@ -734,6 +734,51 @@ private fun OrderDetailPanel(
                 )
             }
 
+            // ── Print Bill button ─────────────────────────────────────────────
+            var isPrintingBill by remember { mutableStateOf(false) }
+            var billPrintMsg   by remember { mutableStateOf("") }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
+            ) {
+                Button3D(
+                    text = if (isPrintingBill) "⏳ Đang in..." else "🧾 In Bill",
+                    onClick = {
+                        if (!isPrintingBill) {
+                            isPrintingBill = true
+                            billPrintMsg = ""
+                            scope.launch {
+                                val (ip, port) = PrinterConfig.getSelectedIpPort() ?: ("192.168.0.114" to 9100)
+                                val now = java.util.Calendar.getInstance()
+                                val billText = buildBillText(order, now)
+                                billPrintMsg = try {
+                                    SocketPrinter.printText(ip, port, billText)
+                                    "✅ Đã in bill"
+                                } catch (e: Exception) {
+                                    "❌ ${e.javaClass.simpleName}: ${e.message?.take(50)}"
+                                }
+                                isPrintingBill = false
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    fontSize = 14.sp,
+                    gradientColors = if (isPrintingBill)
+                        listOf(Color(0xFF78909C), Color(0xFF546E7A))
+                    else
+                        listOf(Color(0xFF0288D1), Color(0xFF01579B))
+                )
+            }
+            if (billPrintMsg.isNotEmpty()) {
+                Text(
+                    billPrintMsg,
+                    fontSize = 11.sp,
+                    color = if (billPrintMsg.startsWith("✅")) Color(0xFF2E7D32) else Color(0xFFC62828),
+                    modifier = Modifier.padding(horizontal = 14.dp)
+                )
+            }
+
             // ── Buttons ───────────────────────────────────────────────────────
             Row(
                 modifier = Modifier
@@ -1839,5 +1884,50 @@ private fun buildCloverReceiptText(
     }
     sb.appendLine("------------------------------------------------")
     sb.appendLine("                  Thank you! \n\n\n")
+    return sb.toString()
+}
+
+// Bill receipt shown to customer before payment — includes cash-discount and card options
+private fun buildBillText(order: CloverOrder, now: java.util.Calendar): String {
+    val items       = order.lineItems?.elements ?: emptyList()
+    val totalCents  = order.total
+    val totalDollars = totalCents / 100.0
+    val subtotal    = totalDollars / 1.08
+    val tax         = totalDollars - subtotal
+    val cashDiscCents  = (totalCents * 0.05).toLong()          // 5% discount
+    val cashTotalCents = totalCents - cashDiscCents
+    val dateStr     = SimpleDateFormat("MM-dd-yyyy", Locale.US).format(now.time)
+    val timeStr     = SimpleDateFormat("HH:mm",      Locale.US).format(now.time)
+    val tableLabel  = order.title.ifBlank { "#${order.id.takeLast(6)}" }
+
+    val sb = StringBuilder()
+    sb.appendLine("           STONE PHO")
+    sb.appendLine("  1525 Baytree Rd, ste M, Valdosta, GA")
+    sb.appendLine("----------------------------------------")
+    sb.appendLine("Table: $tableLabel")
+    sb.appendLine("Date : $dateStr   Time: $timeStr")
+    sb.appendLine("----------------------------------------")
+    sb.appendLine("%-22s %5s %8s".format("Item", "Qty", "Amount"))
+    sb.appendLine("----------------------------------------")
+    items.forEach { li ->
+        val name = (li.item?.name?.takeIf { it.isNotBlank() }
+            ?: li.name.takeIf { it.isNotBlank() } ?: "?").take(22)
+        val qty  = if (li.quantity % 1.0 == 0.0) li.quantity.toInt().toString()
+                   else "%.1f".format(li.quantity)
+        val amt  = "$%,.2f".format(li.lineTotal / 100.0)
+        sb.appendLine("%-22s %5s %8s".format(name, "x$qty", amt))
+    }
+    sb.appendLine("----------------------------------------")
+    sb.appendLine("%-30s %8s".format("Subtotal:", "$%,.2f".format(subtotal)))
+    sb.appendLine("%-30s %8s".format("Tax (8%):", "$%,.2f".format(tax)))
+    sb.appendLine("%-30s %8s".format("TOTAL:", "$%,.2f".format(totalDollars)))
+    sb.appendLine("========================================")
+    sb.appendLine("PAY WITH CASH DISCOUNT 5%")
+    sb.appendLine("%-30s %8s".format("  (-5% = -${formatCents(cashDiscCents)})", formatCents(cashTotalCents)))
+    sb.appendLine("PAY WITH CARD")
+    sb.appendLine("%-30s %8s".format("", formatCents(totalCents)))
+    sb.appendLine("========================================")
+    sb.appendLine("          Thank you for visiting!")
+    sb.appendLine("           Stone Pho Valdosta\n\n\n")
     return sb.toString()
 }
