@@ -806,11 +806,14 @@ private fun OrderDetailPanel(
 
     // ── Change calculator dialog ──────────────────────────────────────────────
     if (showChangeCalc) {
-        val totalDollars      = order.total / 100.0
+        val fullTotal         = order.total / 100.0
+        val subtotalDollars   = fullTotal / 1.08
+        val cashDiscDollars   = subtotalDollars * 0.05        // 5% off subtotal
+        val cashTotalDollars  = fullTotal - cashDiscDollars   // price customer pays in cash
         val received          = receivedAmountText.toDoubleOrNull() ?: 0.0
-        val effectiveReceived = if (receivedAmountText.isEmpty()) totalDollars else received
-        val effectiveChange   = effectiveReceived - totalDollars
-        val canConfirm        = receivedAmountText.isEmpty() || received >= totalDollars
+        val effectiveReceived = if (receivedAmountText.isEmpty()) cashTotalDollars else received
+        val effectiveChange   = effectiveReceived - cashTotalDollars
+        val canConfirm        = receivedAmountText.isEmpty() || received >= cashTotalDollars
 
         AlertDialog(
             onDismissRequest = { showChangeCalc = false },
@@ -833,9 +836,15 @@ private fun OrderDetailPanel(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Cần thanh toán", fontSize = 16.sp, color = Color(0xFF1565C0))
+                        Column {
+                            Text("Cash (giảm 5% subtotal)", fontSize = 13.sp, color = Color(0xFF1565C0))
+                            Text(
+                                "Card: ${"%,.2f$".format(fullTotal)}",
+                                fontSize = 12.sp, color = Color(0xFF78909C)
+                            )
+                        }
                         Text(
-                            formatCents(order.total),
+                            "%,.2f$".format(cashTotalDollars),
                             fontSize = 30.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF1565C0)
@@ -905,9 +914,12 @@ private fun OrderDetailPanel(
                                 val qty = li.quantity.roundToInt().coerceAtLeast(1)
                                 List(qty) { idx -> Product(id = li.id.hashCode() + idx, name = name, price = li.price / 100.0, category = "Clover") }
                             }
-                            val td       = order.total / 100.0
-                            val subtotal = td / 1.08
-                            val tax      = td - subtotal
+                            // Use cash-discounted total (5% off subtotal) for Invoice
+                            val fullTotalInv   = order.total / 100.0
+                            val subtotal       = fullTotalInv / 1.08
+                            val cashDisc       = subtotal * 0.05
+                            val cashTotal      = fullTotalInv - cashDisc
+                            val tax            = fullTotalInv - subtotal
                             val now      = java.util.Calendar.getInstance()
                             val dateStr  = SimpleDateFormat("MM-dd-yyyy", Locale.US).format(now.time)
                             val timeNow  = SimpleDateFormat("HH:mm", Locale.US).format(now.time)
@@ -915,16 +927,17 @@ private fun OrderDetailPanel(
 
                             InvoiceStorage.saveInvoice(context, Invoice(
                                 id = invoiceId, items = products,
-                                subtotal = subtotal, discount = 0.0, tax = tax,
-                                total = td, date = dateStr, time = timeNow,
+                                subtotal = subtotal, discount = cashDisc, tax = tax,
+                                total = cashTotal, date = dateStr, time = timeNow,
                                 tableTitle = order.title
                             ))
 
+                            val cashTotalCents = (cashTotal * 100).toLong()
                             val receiptText = buildCloverReceiptText(
                                 invoiceId    = invoiceId,
                                 tableTitle   = order.title,
                                 lineItems    = lineItemsList,
-                                totalCents   = order.total,
+                                totalCents   = cashTotalCents,
                                 receivedAmt  = effectiveReceived,
                                 changeAmt    = effectiveChange,
                                 date         = dateStr,
@@ -1894,8 +1907,9 @@ private fun buildBillText(order: CloverOrder, now: java.util.Calendar): String {
     val totalDollars = totalCents / 100.0
     val subtotal    = totalDollars / 1.08
     val tax         = totalDollars - subtotal
-    val cashDiscCents  = (totalCents * 0.05).toLong()          // 5% discount
-    val cashTotalCents = totalCents - cashDiscCents
+    val subtotalOnlyCents = (totalCents / 1.08).toLong()
+    val cashDiscCents     = (subtotalOnlyCents * 0.05).toLong()  // 5% off subtotal only
+    val cashTotalCents    = totalCents - cashDiscCents
     val dateStr     = SimpleDateFormat("MM-dd-yyyy", Locale.US).format(now.time)
     val timeStr     = SimpleDateFormat("HH:mm",      Locale.US).format(now.time)
     val tableLabel  = order.title.ifBlank { "#${order.id.takeLast(6)}" }
